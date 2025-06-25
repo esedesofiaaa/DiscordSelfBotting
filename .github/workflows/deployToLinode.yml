@@ -1,0 +1,75 @@
+name: Deploy Discord Bot to Linode
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Permite ejecutar manualmente el workflow
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        # Agregar host a known_hosts de forma segura
+        ssh-keyscan -H ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
+        chmod 644 ~/.ssh/known_hosts
+
+    - name: Test SSH Connection
+      run: |
+        ssh -o ConnectTimeout=10 ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} "echo 'SSH connection successful'"
+
+    - name: Deploy to Linode
+      run: |
+        ssh ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} << 'EOF'
+          set -e  # Exit on any error
+          
+          echo "🚀 Starting deployment..."
+          
+          # Navigate to project directory
+          cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
+          
+          # Stop the bot service before updating
+          echo "⏹️ Stopping Discord bot service..."
+          sudo systemctl stop discord-bot || echo "⚠️ Service was not running"
+          
+          # Pull latest changes
+          echo "📥 Pulling latest changes..."
+          git fetch origin
+          git reset --hard origin/main
+          
+          # Activate virtual environment
+          echo "🐍 Activating virtual environment..."
+          source venv/bin/activate || { echo "❌ Failed to activate virtual environment"; exit 1; }
+          
+          # Update dependencies
+          echo "📦 Installing/updating dependencies..."
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          
+          # Start the bot service
+          echo "▶️ Starting Discord bot service..."
+          sudo systemctl start discord-bot
+          
+          # Check service status
+          echo "🔍 Checking service status..."
+          sudo systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
+          
+          echo "🎉 Deployment completed successfully!"
+        EOF
+
+    - name: Verify Deployment
+      run: |
+        echo "🔍 Verifying deployment status..."
+        ssh ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} "
+          sudo systemctl status discord-bot --no-pager -l
+        "
