@@ -50,6 +50,20 @@ sudo cp discord-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable discord-bot
 
+# Configure passwordless sudo for discord-bot user for systemctl commands
+echo "🔐 Configuring passwordless sudo for systemctl commands..."
+sudo tee /etc/sudoers.d/discord-bot << 'SUDOERS_EOF'
+# Allow discord-bot user to manage discord-bot service without password
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl start discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl stop discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl status discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-bot
+SUDOERS_EOF
+
+# Set proper permissions for sudoers file
+sudo chmod 440 /etc/sudoers.d/discord-bot
+
 # Setup firewall (if needed)
 echo "🔥 Configuring firewall..."
 # sudo ufw allow ssh

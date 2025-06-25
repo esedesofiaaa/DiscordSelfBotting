@@ -42,10 +42,18 @@ jobs:
           echo "⏹️ Stopping Discord bot service..."
           sudo systemctl stop discord-bot || echo "⚠️ Service was not running"
           
-          # Pull latest changes
-          echo "📥 Pulling latest changes..."
-          git fetch origin
-          git reset --hard origin/main
+          # Handle git repository setup
+          echo "📥 Setting up repository..."
+          if [ ! -d ".git" ]; then
+            echo "� No git repository found, cloning..."
+            # Remove any existing files first
+            rm -rf * .[^.]* 2>/dev/null || true
+            git clone https://github.com/esedesofiaaa/DiscordSelfBotting.git .
+          else
+            echo "📦 Updating existing repository..."
+            git fetch origin main
+            git reset --hard origin/main
+          fi
           
           # Activate virtual environment
           echo "🐍 Activating virtual environment..."
