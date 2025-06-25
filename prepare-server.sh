@@ -73,12 +73,7 @@ systemctl enable discord-bot
 # Configure passwordless sudo for deployuser
 echo "🔐 Configuring passwordless sudo..."
 tee /etc/sudoers.d/deployuser << 'SUDOERS_EOF'
-deployuser ALL=(ALL) NOPASSWD: /bin/systemctl start discord-bot
-deployuser ALL=(ALL) NOPASSWD: /bin/systemctl stop discord-bot
-deployuser ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-bot
-deployuser ALL=(ALL) NOPASSWD: /bin/systemctl status discord-bot
-deployuser ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-bot
-deployuser ALL=(ALL) NOPASSWD: /usr/bin/chown -R deployuser\:deployuser /opt/discord-bot
+deployuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl start discord-bot, /usr/bin/systemctl stop discord-bot, /usr/bin/systemctl restart discord-bot, /usr/bin/systemctl status discord-bot, /usr/bin/systemctl is-active discord-bot
 SUDOERS_EOF
 
 chmod 440 /etc/sudoers.d/deployuser
