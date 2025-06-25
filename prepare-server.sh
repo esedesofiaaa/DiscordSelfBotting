@@ -1,112 +1,111 @@
-#!/bin/bash
-# Prepare server for deployuser deployment
-# Run this script ONCE on your server to prepare it for GitHub Actions deployment
+name: Deploy Discord Bot to Linode
 
-set -e
+on:
+  push:
+    branches:
+      - main
 
-echo "🔧 Preparing server for deployuser deployment..."
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
 
-# Check if running as root or with sudo
-if [ "$EUID" -ne 0 ]; then
-    echo "❌ This script must be run as root or with sudo"
-    echo "Usage: sudo bash prepare-server.sh"
-    exit 1
-fi
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-# Get the actual user who ran sudo (not root)
-ACTUAL_USER="${SUDO_USER:-$(whoami)}"
-if [ "$ACTUAL_USER" = "root" ]; then
-    echo "❌ Please run this script with sudo from your normal user account"
-    echo "Don't run as root directly"
-    exit 1
-fi
+    - name: Set up Python # Keep this if you have local tests on the runner
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
 
-echo "👤 Preparing for user: $ACTUAL_USER"
+    - name: Install dependencies (on runner, for potential tests) # Keep this if you have local tests on the runner
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-# Stop any existing service
-echo "⏹️ Stopping any existing discord-bot service..."
-systemctl stop discord-bot 2>/dev/null || echo "Service was not running"
+    - name: Configure SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
+        chmod 644 ~/.ssh/known_hosts
 
-# Create deployuser if it doesn't exist
-echo "👤 Setting up deployuser..."
-if ! id deployuser >/dev/null 2>&1; then
-    useradd -m -s /bin/bash deployuser
-    echo "✅ Created deployuser"
-else
-    echo "✅ deployuser already exists"
-fi
+    - name: Deploy to Linode and Restart Bot
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} << 'EOF'
+          set -e # Exit on any error within this SSH block
 
-# Ensure project directory exists and has correct ownership
-echo "📁 Setting up project directory..."
-mkdir -p /opt/discord-bot
-chown -R deployuser:deployuser /opt/discord-bot
+          echo "🚀 Starting deployment..."
 
-# Clone or update repository
-echo "📥 Setting up repository..."
-cd /opt/discord-bot
-if [ ! -d ".git" ]; then
-    echo "Cloning repository..."
-    sudo -u deployuser git clone https://github.com/esedesofiaaa/DiscordSelfBotting.git .
-else
-    echo "Repository already exists"
-fi
+          # Navigate to project directory
+          cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
 
-# Ensure deployuser owns everything
-chown -R deployuser:deployuser /opt/discord-bot
+          # --- REMOVED THE SUDO CHECK HERE ---
+          # Ya probamos que sudo -n funciona manualmente.
+          # Si falla al intentar usar sudo, es el problema que estamos buscando resolver.
 
-# Set up virtual environment
-echo "🐍 Setting up Python virtual environment..."
-sudo -u deployuser bash -c "
-    cd /opt/discord-bot
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install --upgrade pip
-    pip install -r requirements.txt
-"
+          # Stop the bot service before updating
+          echo "⏹️ Stopping Discord bot service..."
+          # Usamos la ruta completa a systemctl para evitar problemas de PATH
+          # Y asumimos que NOPASSWD ya está configurado
+          /usr/bin/sudo /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
 
-# Set up systemd service
-echo "⚙️ Setting up systemd service..."
-cp /opt/discord-bot/discord-bot.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable discord-bot
+          # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
+          echo "🔧 Fixing file ownership (as safeguard)..."
+          # Aquí, NO USAMOS sudo si deployuser ya es el dueño
+          # Solo se ejecutaría si los permisos se corrompieran (por root u otro proceso)
+          /usr/bin/sudo /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)." # Added fallback
 
-# Configure passwordless sudo for deployuser
-echo "🔐 Configuring passwordless sudo..."
-tee /etc/sudoers.d/deployuser << 'SUDOERS_EOF'
-deployuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl start discord-bot, /usr/bin/systemctl stop discord-bot, /usr/bin/systemctl restart discord-bot, /usr/bin/systemctl status discord-bot, /usr/bin/systemctl is-active discord-bot
-SUDOERS_EOF
+          # Handle git repository setup
+          echo "📥 Setting up repository..."
+          if [ ! -d ".git" ]; then
+            echo "🔄 No git repository found, cloning..."
+            # Remove any existing files first (ensure it's safe)
+            rm -rf /opt/discord-bot/* /opt/discord-bot/.[^.]* 2>/dev/null || true
+            git clone https://github.com/${{ github.repository }}.git . || { echo "❌ Failed to clone repository"; exit 1; }
+            git config --global --add safe.directory /opt/discord-bot
+          else
+            echo "📦 Updating existing repository..."
+            # Ensure correct ownership before git operations (again, a safeguard)
+            git config --global --add safe.directory /opt/discord-bot
+            git clean -fdx  # Remove untracked files and directories
+            git fetch origin main || { echo "❌ Failed to fetch latest changes"; exit 1; }
+            git reset --hard origin/main || { echo "❌ Failed to reset to latest changes"; exit 1; }
+          fi
 
-chmod 440 /etc/sudoers.d/deployuser
+          # Activate virtual environment
+          echo "🐍 Activating virtual environment..."
+          # Asegúrate de que el venv exista (prepare-server.sh lo crea)
+          if [ ! -d "venv" ]; then
+            echo "Creating virtual environment..."
+            python3 -m venv venv || { echo "❌ Failed to create virtual environment"; exit 1; }
+          fi
+          source venv/bin/activate || { echo "❌ Failed to activate virtual environment"; exit 1; }
 
-# Clean up old configurations
-echo "🧹 Cleaning up old configurations..."
-rm -f /etc/sudoers.d/discord-bot
+          # Update dependencies
+          echo "📦 Installing/updating dependencies..."
+          pip install --upgrade pip || { echo "❌ Failed to upgrade pip"; exit 1; }
+          pip install -r requirements.txt || { echo "❌ Failed to install dependencies"; exit 1; }
+          deactivate # No es necesario mantener el venv activo después de pip install
 
-# Test the configuration
-echo "🧪 Testing configuration..."
-visudo -c || { echo "❌ Sudoers configuration error"; exit 1; }
+          # Create .env file with secrets
+          echo "🔑 Creating .env file with secrets..."
+          # Esto es CRÍTICO. ¡NUNCA pongas tus tokens directamente aquí!
+          # Usa los GitHub Secrets.
+          echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
+          echo "PREFIX=!" >> .env
+          # Asegúrate de que .env no tiene permisos de lectura para todos
+          chmod 600 .env
 
-# Test deployuser permissions
-echo "🔍 Testing deployuser permissions..."
-sudo -u deployuser sudo -n systemctl status discord-bot >/dev/null 2>&1 && echo "✅ systemctl permissions OK" || echo "❌ systemctl permissions failed"
-sudo -u deployuser sudo -n chown -R deployuser:deployuser /opt/discord-bot --dry-run >/dev/null 2>&1 && echo "✅ chown permissions OK" || echo "❌ chown permissions failed"
+          # Start the bot service
+          echo "▶️ Starting Discord bot service..."
+          /usr/bin/sudo /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
 
-# Test Python environment
-echo "🐍 Testing Python environment..."
-sudo -u deployuser bash -c "cd /opt/discord-bot && source venv/bin/activate && python --version" && echo "✅ Python environment OK" || echo "❌ Python environment failed"
+          # Check service status
+          echo "🔍 Checking service status..."
+          /usr/bin/sudo /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
 
-echo ""
-echo "🎉 Server preparation completed!"
-echo ""
-echo "📝 Next steps:"
-echo "1. Configure your GitHub Secrets:"
-echo "   - DISCORD_TOKEN: Your Discord bot token"
-echo "   - LINODE_HOST: This server's IP address"
-echo "   - LINODE_USERNAME: deployuser"
-echo "   - SSH_PRIVATE_KEY: Your SSH private key"
-echo ""
-echo "2. You can now deploy using GitHub Actions!"
-echo "3. Or test manually: sudo -u deployuser bash -c 'cd /opt/discord-bot && source venv/bin/activate && python main.py'"
-echo ""
-echo "🔍 Check service status: systemctl status discord-bot"
-echo "📄 View logs: journalctl -u discord-bot -f"
+          echo "🎉 Deployment completed successfully!"
+        EOF
