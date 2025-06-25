@@ -1,8 +1,21 @@
 name: Deploy Discord Bot to Linode
 
 on:
-  push:
-    branches:
+  pu          # Handle git repository setup
+          echo "📥 Setting up repository..."
+          if [ ! -d ".git" ]; then
+            echo "🔄 No git repository found, cloning..."
+            # Remove any existing files first
+            rm -rf * .[^.]* 2>/dev/null || true
+            git clone https://github.com/esedesofiaaa/DiscordSelfBotting.git .
+            git config --global --add safe.directory /opt/discord-bot
+          else
+            echo "📦 Updating existing repository..."
+            # Fix git ownership issues
+            git config --global --add safe.directory /opt/discord-bot
+            git fetch origin main
+            git reset --hard origin/main
+          fiches:
       - main
   workflow_dispatch: # Permite ejecutar manualmente el workflow
 

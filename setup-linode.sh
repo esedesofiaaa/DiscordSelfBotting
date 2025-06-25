@@ -20,11 +20,12 @@ echo "🔄 Switching to discord-bot user..."
 sudo -u discord-bot bash << 'EOF'
 cd /opt/discord-bot
 
-# Clone the repository (you'll need to set up SSH keys or use HTTPS)
+# Clone the repository
 echo "📥 Cloning repository..."
-# git clone git@github.com:your-username/your-repo.git .
-# OR
-# git clone https://github.com/your-username/your-repo.git .
+git clone https://github.com/esedesofiaaa/DiscordSelfBotting.git .
+
+# Configure git safe directory
+git config --global --add safe.directory /opt/discord-bot
 
 # Create virtual environment
 echo "🐍 Creating virtual environment..."
@@ -36,7 +37,7 @@ source venv/bin/activate
 # Install dependencies
 echo "📦 Installing dependencies..."
 pip install --upgrade pip
-# pip install -r requirements.txt  # Uncomment after cloning repo
+pip install -r requirements.txt
 
 # Create logs directory
 mkdir -p logs
@@ -72,8 +73,7 @@ echo "🔥 Configuring firewall..."
 echo "🎉 Setup completed!"
 echo ""
 echo "📝 Next steps:"
-echo "1. Clone your repository to /opt/discord-bot"
-echo "2. Install dependencies: sudo -u discord-bot bash -c 'cd /opt/discord-bot && source venv/bin/activate && pip install -r requirements.txt'"
-echo "3. Configure your bot token and settings"
-echo "4. Start the service: sudo systemctl start discord-bot"
-echo "5. Check status: sudo systemctl status discord-bot"
+echo "1. Configure your bot token and settings in config.py"
+echo "2. Start the service: sudo systemctl start discord-bot"
+echo "3. Check status: sudo systemctl status discord-bot"
+echo "4. View logs: sudo journalctl -u discord-bot -f"

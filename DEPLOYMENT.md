@@ -108,7 +108,22 @@ El deployment se ejecuta automáticamente cuando:
 ### 🐛 Troubleshooting
 
 #### Error: "sudo: a terminal is required to read the password"
-**Solución**: Ejecuta `configure-sudo.sh` en tu servidor para configurar sudo sin contraseña.
+**Causa**: El usuario `discord-bot` no tiene configurado sudo sin contraseña.
+**Solución**: 
+```bash
+# En tu servidor Linode:
+wget https://raw.githubusercontent.com/esedesofiaaa/DiscordSelfBotting/main/fix-deployment.sh
+chmod +x fix-deployment.sh
+sudo ./fix-deployment.sh
+```
+
+#### Error: "fatal: detected dubious ownership in repository"
+**Causa**: Git detecta que el directorio no pertenece al usuario actual.
+**Solución**: Ya incluida en `fix-deployment.sh`, o manualmente:
+```bash
+sudo -u discord-bot git config --global --add safe.directory /opt/discord-bot
+sudo chown -R discord-bot:discord-bot /opt/discord-bot
+```
 
 #### Error: "fatal: not a git repository"
 **Solución**: El workflow ahora maneja automáticamente este caso clonando el repositorio si no existe.
@@ -117,6 +132,14 @@ El deployment se ejecuta automáticamente cuando:
 **Solución**: Asegúrate de que el entorno virtual esté creado:
 ```bash
 sudo -u discord-bot bash -c "cd /opt/discord-bot && python3 -m venv venv"
+```
+
+#### 🚨 Solución Rápida para Problemas Actuales
+Si tienes errores de deployment ahora mismo, ejecuta esto en tu servidor:
+```bash
+wget https://raw.githubusercontent.com/esedesofiaaa/DiscordSelfBotting/main/fix-deployment.sh
+chmod +x fix-deployment.sh
+sudo ./fix-deployment.sh
 ```
 
 #### Verificar el estado del servicio:
