@@ -72,6 +72,13 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           
+          # Create .env file with secrets
+          echo "🔑 Creating .env file with secrets..."
+          cat > .env << 'ENVEOF'
+DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
+PREFIX=!
+ENVEOF
+          
           # Start the bot service
           echo "▶️ Starting Discord bot service..."
           sudo systemctl start discord-bot

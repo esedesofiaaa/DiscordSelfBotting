@@ -1,4 +1,47 @@
+# Dependencies
 node_modules/
+<<<<<<< HEAD
 .env
+=======
+venv/
+discord_selfbotting/
+
+# Environment variables (contains secrets)
+.env
+
+# Log files
+>>>>>>> 4b605d4 (Refactor environment configuration and deployment scripts)
 *.log
+logs/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg

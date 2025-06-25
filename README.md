@@ -12,11 +12,15 @@ Un bot de Discord para automatización y monitoreo de mensajes, ahora en Python.
 
 ## Configuración
 
+### Para desarrollo local:
+
 1. Clona el repositorio
-2. Asegúrate de que el entorno virtual de Python esté configurado:
+2. Crea un entorno virtual:
    ```bash
-   # El entorno ya está configurado en discord_selfbotting/
-   source discord_selfbotting/bin/activate
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   # o
+   venv\Scripts\activate     # Windows
    ```
 
 3. Instala las dependencias:
@@ -24,13 +28,13 @@ Un bot de Discord para automatización y monitoreo de mensajes, ahora en Python.
    pip install -r requirements.txt
    ```
 
-4. Crea un archivo `.env` con tu token de Discord:
+4. Configura las variables de entorno:
    ```bash
-   cp .env .env
+   cp .env.example .env
    nano .env
    ```
    
-   Contenido del `.env`:
+   Agrega tu token de Discord en el archivo `.env`:
    ```env
    DISCORD_TOKEN=tu_token_aqui
    PREFIX=!
@@ -40,14 +44,31 @@ Un bot de Discord para automatización y monitoreo de mensajes, ahora en Python.
 
 6. Inicia el bot:
    ```bash
-   # Usando el script de inicio
-   ./start_bot.sh
+   # Usando los scripts de desarrollo
+   ./dev/start_bot.sh          # Con validaciones
+   ./dev/start_bot_simple.sh   # Ejecución directa
    
    # O manualmente
    python main.py
    ```
 
-## Configuración
+### Para despliegue en servidor:
+
+1. Ejecuta el script de configuración:
+   ```bash
+   sudo bash setup-linode.sh
+   ```
+
+2. El token se configura automáticamente desde GitHub Secrets durante el deployment.
+
+## GitHub Secrets
+
+Para el despliegue automático, configura estos secrets en tu repositorio:
+
+- `DISCORD_TOKEN`: Tu token de Discord
+- `LINODE_HOST`: IP de tu servidor
+- `LINODE_USERNAME`: Usuario para SSH (ej: deployuser)
+- `SSH_PRIVATE_KEY`: Tu clave SSH privada
 
 Edita `config.py` para configurar:
 - Ajustes del bot
