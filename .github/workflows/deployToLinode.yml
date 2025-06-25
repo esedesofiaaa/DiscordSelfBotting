@@ -38,13 +38,29 @@ jobs:
           # Navigate to project directory
           cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
           
+          # Check if deployuser configuration exists
+          if [ ! -f "/etc/sudoers.d/deployuser" ]; then
+            echo "❌ deployuser is not configured with passwordless sudo"
+            echo "🔧 Please run the migration script first:"
+            echo "   sudo bash migrate-to-deployuser.sh"
+            exit 1
+          fi
+          
+          # Test sudo configuration
+          if ! sudo -n systemctl status discord-bot >/dev/null 2>&1; then
+            echo "❌ deployuser cannot use sudo without password"
+            echo "🔧 Please run the migration script first:"
+            echo "   sudo bash migrate-to-deployuser.sh"
+            exit 1
+          fi
+          
           # Stop the bot service before updating
           echo "⏹️ Stopping Discord bot service..."
           sudo systemctl stop discord-bot || echo "⚠️ Service was not running"
           
           # Fix ownership issues first
           echo "🔧 Fixing file ownership..."
-          sudo chown -R discord-bot:discord-bot /opt/discord-bot
+          sudo chown -R deployuser:deployuser /opt/discord-bot
           
           # Handle git repository setup
           echo "📥 Setting up repository..."

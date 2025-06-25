@@ -54,21 +54,52 @@ Un bot de Discord para automatización y monitoreo de mensajes, ahora en Python.
 
 ### Para despliegue en servidor:
 
-1. Ejecuta el script de configuración:
+1. **Primera vez - Preparar el servidor:**
    ```bash
-   sudo bash setup-linode.sh
+   # Conectar al servidor
+   ssh tu_usuario@tu_servidor
+   
+   # Clonar el repositorio
+   cd /opt
+   sudo git clone https://github.com/tu_usuario/DiscordSelfBotting.git discord-bot
+   cd discord-bot
+   
+   # Ejecutar script de preparación
+   sudo bash prepare-server.sh
    ```
 
-2. El token se configura automáticamente desde GitHub Secrets durante el deployment.
+2. **Configurar GitHub Secrets** (ver sección más abajo)
+
+3. **El deployment es automático** - Se ejecuta cuando haces push a main
+
+### Migración desde discord-bot a deployuser:
+
+Si ya tenías el bot configurado con el usuario `discord-bot`:
+
+```bash
+# En el servidor
+cd /opt/discord-bot
+sudo bash migrate-to-deployuser.sh
+```
 
 ## GitHub Secrets
 
-Para el despliegue automático, configura estos secrets en tu repositorio:
+Para el deployment automático, configura estos secrets en tu repositorio de GitHub:
+
+**Settings → Secrets and variables → Actions → New repository secret**
 
 - `DISCORD_TOKEN`: Tu token de Discord
-- `LINODE_HOST`: IP de tu servidor
-- `LINODE_USERNAME`: Usuario para SSH (ej: deployuser)
+- `LINODE_HOST`: IP de tu servidor  
+- `LINODE_USERNAME`: `deployuser` (usuario configurado por el script)
 - `SSH_PRIVATE_KEY`: Tu clave SSH privada
+
+### ¿Cómo obtener tu clave SSH privada?
+
+```bash
+# En tu máquina local
+cat ~/.ssh/id_rsa
+# Copia todo el contenido (incluyendo -----BEGIN y -----END)
+```
 
 Edita `config.py` para configurar:
 - Ajustes del bot
