@@ -74,10 +74,8 @@ jobs:
           
           # Create .env file with secrets
           echo "🔑 Creating .env file with secrets..."
-          cat > .env << 'ENVEOF'
-DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
-PREFIX=!
-ENVEOF
+          echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
+          echo "PREFIX=!" >> .env
           
           # Start the bot service
           echo "▶️ Starting Discord bot service..."
