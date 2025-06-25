@@ -193,8 +193,6 @@ The bot supports the following commands:
 
 ## Security Considerations
 
-⚠️ **Important**: This is a self-bot, which violates Discord's Terms of Service. Use at your own risk.
-
 - Bot token is stored securely using GitHub Secrets
 - Environment variables are used for sensitive configuration
 - Local `.env` files are excluded from version control
@@ -223,17 +221,3 @@ sudo systemctl restart discord-bot
 # View logs
 tail -f logs/messages.txt
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `./branch-helper.sh feature your-feature`
-3. Make your changes and commit them
-4. Push to your fork and submit a pull request
-5. Merge to develop first for testing
-
-## License
-
-This project is for educational purposes only. Use responsibly and in accordance with Discord's Terms of Service.
-- **Push a `develop` o `feature/*`** → Tests automáticos
-- **Pull Request** → Tests antes de merge
