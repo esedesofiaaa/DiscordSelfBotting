@@ -60,6 +60,8 @@ discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl stop discord-bot
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-bot
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl status discord-bot
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-bot
+# Allow chown for fixing ownership issues during deployment
+discord-bot ALL=(ALL) NOPASSWD: /bin/chown -R discord-bot:discord-bot /opt/discord-bot
 SUDOERS_EOF
 
 # Set proper permissions for sudoers file
