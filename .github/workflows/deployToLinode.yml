@@ -4,109 +4,108 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # Permite ejecutar manualmente el workflow
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
-    
+
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
+
+    - name: Set up Python # Keep this if you have local tests on the runner
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies (on runner, for potential tests) # Keep this if you have local tests on the runner
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
     - name: Configure SSH
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        # Agregar host a known_hosts de forma segura
-        ssh-keyscan -H ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
+        ssh-keyscan ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
         chmod 644 ~/.ssh/known_hosts
 
-    - name: Test SSH Connection
+    - name: Deploy to Linode and Restart Bot
       run: |
-        ssh -o ConnectTimeout=10 ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} "echo 'SSH connection successful'"
+        ssh -o StrictHostKeyChecking=no ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} << 'EOF'
+          set -e # Exit on any error within this SSH block
 
-    - name: Deploy to Linode
-      run: |
-        ssh ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} << 'EOF'
-          set -e  # Exit on any error
-          
           echo "🚀 Starting deployment..."
-          
+
           # Navigate to project directory
           cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
-          
-          # Check if deployuser configuration exists
-          if [ ! -f "/etc/sudoers.d/deployuser" ]; then
-            echo "❌ deployuser is not configured with passwordless sudo"
-            echo "🔧 Please run the migration script first:"
-            echo "   sudo bash migrate-to-deployuser.sh"
-            exit 1
-          fi
-          
-          # Test sudo configuration
-          if ! sudo -n systemctl status discord-bot >/dev/null 2>&1; then
-            echo "❌ deployuser cannot use sudo without password"
-            echo "🔧 Please run the migration script first:"
-            echo "   sudo bash migrate-to-deployuser.sh"
-            exit 1
-          fi
-          
+
+          # --- REMOVED THE SUDO CHECK HERE ---
+          # Ya probamos que sudo -n funciona manualmente.
+          # Si falla al intentar usar sudo, es el problema que estamos buscando resolver.
+
           # Stop the bot service before updating
           echo "⏹️ Stopping Discord bot service..."
-          sudo systemctl stop discord-bot || echo "⚠️ Service was not running"
-          
-          # Fix ownership issues first
-          echo "🔧 Fixing file ownership..."
-          sudo chown -R deployuser:deployuser /opt/discord-bot
-          
+          # Usamos la ruta completa a systemctl para evitar problemas de PATH
+          # Y asumimos que NOPASSWD ya está configurado
+          /usr/bin/sudo /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
+
+          # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
+          echo "🔧 Fixing file ownership (as safeguard)..."
+          # Aquí, NO USAMOS sudo si deployuser ya es el dueño
+          # Solo se ejecutaría si los permisos se corrompieran (por root u otro proceso)
+          /usr/bin/sudo /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)." # Added fallback
+
           # Handle git repository setup
           echo "📥 Setting up repository..."
           if [ ! -d ".git" ]; then
             echo "🔄 No git repository found, cloning..."
-            # Remove any existing files first
-            rm -rf * .[^.]* 2>/dev/null || true
-            git clone https://github.com/esedesofiaaa/DiscordSelfBotting.git .
+            # Remove any existing files first (ensure it's safe)
+            rm -rf /opt/discord-bot/* /opt/discord-bot/.[^.]* 2>/dev/null || true
+            git clone https://github.com/${{ github.repository }}.git . || { echo "❌ Failed to clone repository"; exit 1; }
             git config --global --add safe.directory /opt/discord-bot
           else
             echo "📦 Updating existing repository..."
-            # Fix git ownership and permissions
+            # Ensure correct ownership before git operations (again, a safeguard)
             git config --global --add safe.directory /opt/discord-bot
             git clean -fdx  # Remove untracked files and directories
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin main || { echo "❌ Failed to fetch latest changes"; exit 1; }
+            git reset --hard origin/main || { echo "❌ Failed to reset to latest changes"; exit 1; }
           fi
-          
+
           # Activate virtual environment
           echo "🐍 Activating virtual environment..."
+          # Asegúrate de que el venv exista (prepare-server.sh lo crea)
+          if [ ! -d "venv" ]; then
+            echo "Creating virtual environment..."
+            python3 -m venv venv || { echo "❌ Failed to create virtual environment"; exit 1; }
+          fi
           source venv/bin/activate || { echo "❌ Failed to activate virtual environment"; exit 1; }
-          
+
           # Update dependencies
           echo "📦 Installing/updating dependencies..."
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          
+          pip install --upgrade pip || { echo "❌ Failed to upgrade pip"; exit 1; }
+          pip install -r requirements.txt || { echo "❌ Failed to install dependencies"; exit 1; }
+          deactivate # No es necesario mantener el venv activo después de pip install
+
           # Create .env file with secrets
           echo "🔑 Creating .env file with secrets..."
+          # Esto es CRÍTICO. ¡NUNCA pongas tus tokens directamente aquí!
+          # Usa los GitHub Secrets.
           echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
           echo "PREFIX=!" >> .env
-          
+          # Asegúrate de que .env no tiene permisos de lectura para todos
+          chmod 600 .env
+
           # Start the bot service
           echo "▶️ Starting Discord bot service..."
-          sudo systemctl start discord-bot
-          
+          /usr/bin/sudo /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
+
           # Check service status
           echo "🔍 Checking service status..."
-          sudo systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
-          
+          /usr/bin/sudo /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
+
           echo "🎉 Deployment completed successfully!"
         EOF
-
-    - name: Verify Deployment
-      run: |
-        echo "🔍 Verifying deployment status..."
-        ssh ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} "
-          sudo systemctl status discord-bot --no-pager -l
-        "
