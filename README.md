@@ -1,121 +1,239 @@
 # Discord Self-Bot (Python)
 
-Un bot de Discord para automatización y monitoreo de mensajes, ahora en Python.
+A Discord bot for automation and message monitoring, built with Python.
 
-## Características
+## Features
 
-- Monitoreo y registro de mensajes
-- Sistema de comandos con soporte de prefijo
-- Eliminación de mensajes
-- Información y estadísticas del bot
-- Verificación de latencia
+- Message monitoring and logging
+- Command system with prefix support
+- Message deletion
+- Bot information and statistics
+- Latency verification
 
-## Configuración
+## Setup
 
-### Para desarrollo local:
+### For local development:
 
-1. Clona el repositorio
-2. Crea un entorno virtual:
+1. Clone the repository
+2. Create a virtual environment:
    ```bash
    python -m venv venv
    source venv/bin/activate  # Linux/Mac
-   # o
+   # or
    venv\Scripts\activate     # Windows
    ```
 
-3. Instala las dependencias:
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Configura las variables de entorno:
+4. Configure environment variables:
    ```bash
    cp .env.example .env
    nano .env
    ```
    
-   Agrega tu token de Discord en el archivo `.env`:
+   Add your Discord token to the `.env` file:
    ```env
-   DISCORD_TOKEN=tu_token_aqui
+   DISCORD_TOKEN=your_token_here
    PREFIX=!
    ```
 
-5. Configura los ajustes del bot en `config.py`
+5. Configure bot settings in `config.py`
 
-6. Inicia el bot:
+6. Start the bot:
    ```bash
-   # Usando los scripts de desarrollo
-   ./dev/start_bot.sh          # Con validaciones
-   ./dev/start_bot_simple.sh   # Ejecución directa
+   # Using development scripts
+   ./dev/start_bot.sh          # With validations
+   ./dev/start_bot_simple.sh   # Direct execution
    
-   # O manualmente
+   # Or manually
    python main.py
    ```
 
-### Para despliegue en servidor:
+### For server deployment:
 
-1. **Primera vez - Preparar el servidor:**
+1. **First time - Prepare the server:**
    ```bash
-   # Conectar al servidor
-   ssh tu_usuario@tu_servidor
+   # Connect to server
+   ssh your_user@your_server
    
-   # Clonar el repositorio
+   # Clone the repository
    cd /opt
-   sudo git clone https://github.com/tu_usuario/DiscordSelfBotting.git discord-bot
+   sudo git clone https://github.com/your_username/DiscordSelfBotting.git discord-bot
    cd discord-bot
    
-   # Ejecutar script de preparación
+   # Run preparation script
    sudo bash prepare-server.sh
    ```
 
-2. **Configurar GitHub Secrets** (ver sección más abajo)
+2. **Configure GitHub Secrets** (see section below)
 
-3. **El deployment es automático** - Se ejecuta cuando haces push a main
+3. **Deployment is automatic** - Runs when you push to main branch
 
-### Migración desde discord-bot a deployuser:
+### Migration from discord-bot to deployuser:
 
-Si ya tenías el bot configurado con el usuario `discord-bot`:
+If you already had the bot configured with the `discord-bot` user:
 
 ```bash
-# En el servidor
+# On the server
 cd /opt/discord-bot
 sudo bash migrate-to-deployuser.sh
 ```
 
 ## GitHub Secrets
 
-Para el deployment automático, configura estos secrets en tu repositorio de GitHub:
+For automatic deployment, configure these secrets in your GitHub repository:
 
 **Settings → Secrets and variables → Actions → New repository secret**
 
-- `DISCORD_TOKEN`: Tu token de Discord
-- `LINODE_HOST`: IP de tu servidor  
-- `LINODE_USERNAME`: `deployuser` (usuario configurado por el script)
-- `SSH_PRIVATE_KEY`: Tu clave SSH privada
+- `DISCORD_TOKEN`: Your Discord bot token
+- `LINODE_HOST`: Your server's IP address
+- `LINODE_USERNAME`: `deployuser` (user configured by the script)
+- `SSH_PRIVATE_KEY`: Your SSH private key
 
-### ¿Cómo obtener tu clave SSH privada?
+### How to get your SSH private key?
 
 ```bash
-# En tu máquina local
+# On your local machine
 cat ~/.ssh/id_rsa
-# Copia todo el contenido (incluyendo -----BEGIN y -----END)
+# Copy all content (including -----BEGIN and -----END)
 ```
 
-Edita `config.py` para configurar:
-- Ajustes del bot
-- Opciones de monitoreo de mensajes
-- IDs de servidor y canal
+Edit `config.py` to configure:
+- Bot settings
+- Message monitoring options
+- Server and channel IDs
 
-## Estructura del Proyecto
+## Project Structure
 
 ```
-├── main.py              # Archivo principal del bot
-├── config.py            # Configuración del bot
-├── requirements.txt     # Dependencias de Python
-├── start_bot.sh        # Script de inicio
-├── .env.example        # Ejemplo de archivo de entorno
+├── main.py              # Main bot file
+├── config.py            # Bot configuration
+├── requirements.txt     # Python dependencies
+├── .env.example        # Environment file example
+├── dev/
+│   ├── start_bot.sh    # Development start script (with validations)
+│   └── start_bot_simple.sh # Simple start script
 ├── utils/
-│   └── logger.py       # Logger de mensajes
-├── logs/               # Directorio de logs
-└── discord_selfbotting/ # Entorno virtual de Python
+│   └── logger.py       # Message logger
+├── logs/               # Logs directory
+└── venv/               # Python virtual environment
 ```
+
+## 🌿 Development Workflow with Branches
+
+### Branch Strategy:
+
+- **`main`** → Production (automatic deployment to server)
+- **`develop`** → Development/staging (automatic testing)
+- **`feature/*`** → New features
+- **`hotfix/*`** → Critical fixes
+
+### Recommended workflow:
+
+#### **1. Initial setup:**
+```bash
+# Initialize development workflow
+./branch-helper.sh init
+```
+
+#### **2. Develop new feature:**
+```bash
+# Create feature branch
+./branch-helper.sh feature feature-name
+
+# Make your changes
+git add .
+git commit -m "Add new functionality"
+git push
+
+# When ready, merge to develop
+./branch-helper.sh finish feature-name
+```
+
+#### **3. Release to production:**
+```bash
+# Merge develop to main (triggers deployment)
+./branch-helper.sh release
+```
+
+#### **4. Critical hotfix:**
+```bash
+# For critical bugs in production
+./branch-helper.sh hotfix fix-name
+# Make changes and manually merge to main and develop
+```
+
+### Useful commands:
+
+```bash
+# View current status
+./branch-helper.sh status
+
+# View complete help
+./branch-helper.sh help
+```
+
+### Automatic workflows:
+
+- **Push to `main`** → Automatic deployment to production
+- **Push to `develop`** → Automatic testing and validation
+- **Pull Request to `main`** → Code review and testing
+
+## Commands
+
+The bot supports the following commands:
+
+- `!ping` - Check bot latency
+- `!info` - Display bot information and statistics  
+- `!clear [amount]` - Delete messages (default: 1)
+- `!help` - Show available commands
+
+## Security Considerations
+
+⚠️ **Important**: This is a self-bot, which violates Discord's Terms of Service. Use at your own risk.
+
+- Bot token is stored securely using GitHub Secrets
+- Environment variables are used for sensitive configuration
+- Local `.env` files are excluded from version control
+
+## Monitoring
+
+### Server monitoring:
+
+```bash
+# Check service status
+sudo systemctl status discord-bot
+
+# View real-time logs
+sudo journalctl -u discord-bot -f
+
+# Restart service
+sudo systemctl restart discord-bot
+```
+
+### Local monitoring:
+
+```bash
+# Check environment
+./check_env.sh
+
+# View logs
+tail -f logs/messages.txt
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `./branch-helper.sh feature your-feature`
+3. Make your changes and commit them
+4. Push to your fork and submit a pull request
+5. Merge to develop first for testing
+
+## License
+
+This project is for educational purposes only. Use responsibly and in accordance with Discord's Terms of Service.
+- **Push a `develop` o `feature/*`** → Tests automáticos
+- **Pull Request** → Tests antes de merge

@@ -3,7 +3,20 @@ name: Deploy Discord Bot to Linode
 on:
   push:
     branches:
-      - main
+      - main  # Solo deploy desde main
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:  # Permite deployment manual
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
 
 jobs:
   deploy:
