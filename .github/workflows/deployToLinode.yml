@@ -42,21 +42,17 @@ jobs:
           # Navigate to project directory
           cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
 
-          # --- REMOVED THE SUDO CHECK HERE ---
-          # Ya probamos que sudo -n funciona manualmente.
-          # Si falla al intentar usar sudo, es el problema que estamos buscando resolver.
-
           # Stop the bot service before updating
           echo "⏹️ Stopping Discord bot service..."
           # Usamos la ruta completa a systemctl para evitar problemas de PATH
           # Y asumimos que NOPASSWD ya está configurado
-          /usr/bin/sudo /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
+          /usr/bin/sudo -n /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
 
           # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
           echo "🔧 Fixing file ownership (as safeguard)..."
           # Aquí, NO USAMOS sudo si deployuser ya es el dueño
           # Solo se ejecutaría si los permisos se corrompieran (por root u otro proceso)
-          /usr/bin/sudo /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)." # Added fallback
+          /usr/bin/sudo -n /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)." # Added fallback
 
           # Handle git repository setup
           echo "📥 Setting up repository..."
@@ -101,11 +97,11 @@ jobs:
 
           # Start the bot service
           echo "▶️ Starting Discord bot service..."
-          /usr/bin/sudo /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
+          /usr/bin/sudo -n /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
 
           # Check service status
           echo "🔍 Checking service status..."
-          /usr/bin/sudo /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
+          /usr/bin/sudo -n /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
 
           echo "🎉 Deployment completed successfully!"
         EOF
