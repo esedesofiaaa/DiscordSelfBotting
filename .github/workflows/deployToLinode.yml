@@ -56,8 +56,8 @@ jobs:
           cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
 
           # Stop the message listener service before updating
-          echo "⏹️ Stopping Discord message listener service..."
-          /usr/bin/sudo -n /usr/bin/systemctl stop discord-message-listener || echo "⚠️ Service was not running or failed to stop, continuing."
+          echo "⏹️ Stopping Discord bot service..."
+          /usr/bin/sudo -n /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
 
           # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
           echo "🔧 Fixing file ownership (as safeguard)..."
@@ -104,13 +104,18 @@ jobs:
           # Asegúrate de que .env no tiene permisos de lectura para todos
           chmod 600 .env
 
+          # Update service configuration
+          echo "🔧 Updating service configuration..."
+          /usr/bin/sudo cp discord-bot.service /etc/systemd/system/
+          /usr/bin/sudo systemctl daemon-reload
+
           # Start the message listener service
-          echo "▶️ Starting Discord message listener service..."
-          /usr/bin/sudo -n /usr/bin/systemctl start discord-message-listener || { echo "❌ Failed to start Discord message listener service"; exit 1; }
+          echo "▶️ Starting Discord bot service..."
+          /usr/bin/sudo -n /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
 
           # Check service status
           echo "🔍 Checking service status..."
-          /usr/bin/sudo -n /usr/bin/systemctl is-active discord-message-listener --quiet && echo "✅ Discord message listener is running" || { echo "❌ Failed to start Discord message listener"; exit 1; }
+          /usr/bin/sudo -n /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
 
           echo "🎉 Deployment completed successfully!"
         EOF

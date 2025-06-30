@@ -47,19 +47,19 @@ EOF
 
 # Copy and setup systemd service
 echo "⚙️ Setting up systemd service..."
-sudo cp discord-message-listener.service /etc/systemd/system/
+sudo cp discord-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable discord-message-listener
+sudo systemctl enable discord-bot
 
 # Configure passwordless sudo for discord-bot user for systemctl commands
 echo "🔐 Configuring passwordless sudo for systemctl commands..."
 sudo tee /etc/sudoers.d/discord-bot << 'SUDOERS_EOF'
-# Allow discord-bot user to manage discord-message-listener service without password
-discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl start discord-message-listener
-discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl stop discord-message-listener
-discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-message-listener
-discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl status discord-message-listener
-discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-message-listener
+# Allow discord-bot user to manage discord-bot service without password
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl start discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl stop discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl status discord-bot
+discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-bot
 # Allow chown for fixing ownership issues during deployment
 discord-bot ALL=(ALL) NOPASSWD: /bin/chown -R discord-bot:discord-bot /opt/discord-bot
 SUDOERS_EOF
@@ -76,6 +76,6 @@ echo "🎉 Setup completed!"
 echo ""
 echo "📝 Next steps:"
 echo "1. Configure your Discord token in .env file"
-echo "2. Start the service: sudo systemctl start discord-message-listener"
-echo "3. Check status: sudo systemctl status discord-message-listener"
-echo "4. View logs: sudo journalctl -u discord-message-listener -f"
+echo "2. Start the service: sudo systemctl start discord-bot"
+echo "3. Check status: sudo systemctl status discord-bot"
+echo "4. View logs: sudo journalctl -u discord-bot -f"
