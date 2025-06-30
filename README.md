@@ -1,52 +1,71 @@
 # Discord Self-Bot (Python)
 
-A Discord bot for automation and message monitoring, built with Python.
+A professional Discord self-bot for automation and message monitoring, built with Python and organized with a modular architecture.
 
-## Features
+## ✨ Features
 
-- Message monitoring and logging
-- Command system with prefix support
-- Message deletion
-- Bot information and statistics
-- Latency verification
+- 📝 **Message monitoring and logging** with JSON/text output options
+- 🎯 **Modular command system** with easy extensibility  
+- 🗑️ **Message management** (purge, clean by content)
+- 📊 **Bot information and statistics**
+- 🏓 **Latency verification and health checks**
+- ⚙️ **Environment-based configuration**
+- 🔧 **Professional project structure**
 
-## Setup
+## 📁 Project Structure
+
+```
+DiscordSelfBotting/
+├── src/                          # Main source code
+│   ├── core/                     # Core functionality
+│   │   ├── config.py            # Configuration management
+│   │   └── logger.py            # Enhanced message logger
+│   ├── bot/                     # Bot client
+│   │   └── client.py            # Main bot class
+│   └── commands/                # Command modules
+│       ├── base.py              # Base command classes
+│       ├── utility.py           # Utility commands
+│       ├── moderation.py        # Moderation commands
+│       └── monitoring.py        # Monitoring commands
+├── scripts/                     # Organized scripts
+│   ├── development/             # Development scripts
+│   └── deployment/              # Deployment scripts
+├── logs/                        # Log files
+├── run.py                       # Main entry point
+├── start_bot.sh                 # Startup script
+├── requirements.txt             # Dependencies
+└── .env.example                 # Environment configuration template
+```
+
+## 🚀 Quick Start
 
 ### For local development:
 
-1. Clone the repository
-2. Create a virtual environment:
+1. **Clone and setup environment:**
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # or
-   venv\Scripts\activate     # Windows
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Configure environment variables:
-   ```bash
+   git clone <repository>
+   cd DiscordSelfBotting
    cp .env.example .env
-   nano .env
    ```
-   
-   Add your Discord token to the `.env` file:
+
+2. **Configure your bot:**
+   Edit `.env` file with your settings:
    ```env
-   DISCORD_TOKEN=your_token_here
+   DISCORD_TOKEN=your_discord_token_here
+   OWNER_ID=your_discord_user_id_here
    PREFIX=!
+   MONITORING_SERVER_ID=server_id_to_monitor
    ```
 
-5. Configure bot settings in `config.py`
-
-6. Start the bot:
+3. **Start the bot:**
    ```bash
-   # Using development scripts
-   ./dev/start_bot.sh          # With validations
-   ./dev/start_bot_simple.sh   # Direct execution
+   ./start_bot.sh
+   ```
+
+   Or for simple startup:
+   ```bash
+   python3 run.py
+   ```
    
    # Or manually
    python main.py

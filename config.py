@@ -1,27 +1,34 @@
+"""
+Legacy configuration compatibility
+This maintains compatibility for any old imports while using the new organized config
+"""
+import sys
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Add src directory to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# Bot configuration
-TOKEN = os.getenv('DISCORD_TOKEN')
-PREFIX = os.getenv('PREFIX', '!')
-OWNER_ID = '1384570203022692392'  # Replace with your Discord user ID
+# Import the new config
+from core.config import config
 
-# Bot settings
+# Maintain backward compatibility with old variable names
+TOKEN = config.TOKEN
+PREFIX = config.bot.command_prefix
+OWNER_ID = config.OWNER_ID
+
+# Old SETTINGS dictionary for compatibility
 SETTINGS = {
-    'auto_reply': False,
-    'log_messages': True,
-    'delete_after_reply': False
+    'auto_reply': config.bot.auto_reply,
+    'log_messages': config.bot.log_messages,
+    'delete_after_reply': config.bot.delete_after_reply
 }
 
-# Message monitoring settings
+# Old MONITORING dictionary for compatibility  
 MONITORING = {
-    'enabled': True,
-    'server_id': '1331752826082295899',  # Replace with the server ID to monitor
-    'channel_ids': [],  # Empty list = monitor all channels, or specify channel IDs
-    'log_file': './logs/messages.txt',
-    'include_attachments': True,
-    'include_embeds': True
+    'enabled': config.monitoring.enabled,
+    'server_id': config.monitoring.server_id,
+    'channel_ids': config.monitoring.channel_ids,
+    'log_file': config.monitoring.log_file,
+    'include_attachments': config.monitoring.include_attachments,
+    'include_embeds': config.monitoring.include_embeds
 }

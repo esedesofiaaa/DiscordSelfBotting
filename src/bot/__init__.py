@@ -1,0 +1,3 @@
+"""
+Bot client module
+"""
