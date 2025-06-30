@@ -10,22 +10,22 @@ echo "🚀 Setting up Discord Message Listener environment on Linode..."
 echo "👤 Creating discord-bot user..."
 sudo useradd -m -s /bin/bash discord-bot || echo "User already exists"
 
-# Create project directory
+# Create project directory (use existing directory structure for compatibility)
 echo "📁 Creating project directory..."
-sudo mkdir -p /opt/discord-message-listener
-sudo chown discord-bot:discord-bot /opt/discord-message-listener
+sudo mkdir -p /opt/discord-bot
+sudo chown discord-bot:discord-bot /opt/discord-bot
 
 # Switch to discord-bot user for the rest of the setup
 echo "🔄 Switching to discord-bot user..."
 sudo -u discord-bot bash << 'EOF'
-cd /opt/discord-message-listener
+cd /opt/discord-bot
 
 # Clone the repository
 echo "📥 Cloning repository..."
 git clone https://github.com/esedesofiaaa/DiscordSelfBotting.git .
 
 # Configure git safe directory
-git config --global --add safe.directory /opt/discord-message-listener
+git config --global --add safe.directory /opt/discord-bot
 
 # Create virtual environment
 echo "🐍 Creating virtual environment..."
@@ -61,7 +61,7 @@ discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-message-listener
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl status discord-message-listener
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-message-listener
 # Allow chown for fixing ownership issues during deployment
-discord-bot ALL=(ALL) NOPASSWD: /bin/chown -R discord-bot:discord-bot /opt/discord-message-listener
+discord-bot ALL=(ALL) NOPASSWD: /bin/chown -R discord-bot:discord-bot /opt/discord-bot
 SUDOERS_EOF
 
 # Set proper permissions for sudoers file

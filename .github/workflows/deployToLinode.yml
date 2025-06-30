@@ -52,8 +52,8 @@ jobs:
 
           echo "🚀 Starting deployment..."
 
-          # Navigate to project directory
-          cd /opt/discord-message-listener || { echo "❌ Failed to navigate to project directory"; exit 1; }
+          # Navigate to project directory (use existing directory)
+          cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
 
           # Stop the message listener service before updating
           echo "⏹️ Stopping Discord message listener service..."
@@ -61,20 +61,20 @@ jobs:
 
           # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
           echo "🔧 Fixing file ownership (as safeguard)..."
-          /usr/bin/sudo -n /usr/bin/chown -R deployuser:deployuser /opt/discord-message-listener || echo "⚠️ Could not set ownership (might not be necessary)."
+          /usr/bin/sudo -n /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)."
 
           # Handle git repository setup
           echo "📥 Setting up repository..."
           if [ ! -d ".git" ]; then
             echo "🔄 No git repository found, cloning..."
             # Remove any existing files first (ensure it's safe)
-            rm -rf /opt/discord-message-listener/* /opt/discord-message-listener/.[^.]* 2>/dev/null || true
+            rm -rf /opt/discord-bot/* /opt/discord-bot/.[^.]* 2>/dev/null || true
             git clone https://github.com/${{ github.repository }}.git . || { echo "❌ Failed to clone repository"; exit 1; }
-            git config --global --add safe.directory /opt/discord-message-listener
+            git config --global --add safe.directory /opt/discord-bot
           else
             echo "📦 Updating existing repository..."
             # Ensure correct ownership before git operations (again, a safeguard)
-            git config --global --add safe.directory /opt/discord-message-listener
+            git config --global --add safe.directory /opt/discord-bot
             git clean -fdx  # Remove untracked files and directories
             git fetch origin main || { echo "❌ Failed to fetch latest changes"; exit 1; }
             git reset --hard origin/main || { echo "❌ Failed to reset to latest changes"; exit 1; }

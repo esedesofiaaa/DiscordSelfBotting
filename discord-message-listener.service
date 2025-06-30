@@ -2,7 +2,7 @@
 # Save this file as: /etc/systemd/system/discord-message-listener.service
 # 
 # Installation commands:
-# sudo cp discord-bot.service /etc/systemd/system/discord-message-listener.service
+# sudo cp discord-message-listener.service /etc/systemd/system/
 # sudo systemctl daemon-reload
 # sudo systemctl enable discord-message-listener
 # sudo systemctl start discord-message-listener
@@ -15,9 +15,9 @@ After=network.target
 Type=simple
 User=discord-bot  # Create a dedicated user for the bot
 Group=discord-bot
-WorkingDirectory=/opt/discord-message-listener
-Environment=PATH=/opt/discord-message-listener/venv/bin
-ExecStart=/opt/discord-message-listener/venv/bin/python simple_message_listener.py
+WorkingDirectory=/opt/discord-bot
+Environment=PATH=/opt/discord-bot/venv/bin
+ExecStart=/opt/discord-bot/venv/bin/python simple_message_listener.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
