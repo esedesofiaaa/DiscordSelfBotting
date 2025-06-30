@@ -106,13 +106,8 @@ jobs:
 
           # Update service configuration
           echo "🔧 Updating service configuration..."
-<<<<<<< HEAD
-          /usr/bin/sudo cp discord-bot.service /etc/systemd/system/
-          /usr/bin/sudo systemctl daemon-reload
-=======
           /usr/bin/sudo -n cp discord-bot.service /etc/systemd/system/
           /usr/bin/sudo -n systemctl daemon-reload
->>>>>>> 97e4673 (refactor: Update service user references from 'discord-bot' to 'deployuser' and fix log file environment variable typo)
 
           # Start the message listener service
           echo "▶️ Starting Discord bot service..."
