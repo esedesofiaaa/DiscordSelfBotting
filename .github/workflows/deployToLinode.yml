@@ -1,11 +1,11 @@
-name: Deploy Discord Bot to Linode
+name: Deploy Discord Message Listener to Linode
 
 on:
   push:
     branches:
       - main  # Solo deploy desde main
     paths-ignore:
-      - 'README.md'
+      - 'README_SIMPLE_LISTENER.md'
       - 'docs/**'
       - '*.md'
   workflow_dispatch:  # Permite deployment manual
@@ -45,7 +45,7 @@ jobs:
         ssh-keyscan ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
         chmod 644 ~/.ssh/known_hosts
 
-    - name: Deploy to Linode and Restart Bot
+    - name: Deploy to Linode and Restart Message Listener
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} << 'EOF'
           set -e # Exit on any error within this SSH block
@@ -53,32 +53,28 @@ jobs:
           echo "🚀 Starting deployment..."
 
           # Navigate to project directory
-          cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
+          cd /opt/discord-message-listener || { echo "❌ Failed to navigate to project directory"; exit 1; }
 
-          # Stop the bot service before updating
-          echo "⏹️ Stopping Discord bot service..."
-          # Usamos la ruta completa a systemctl para evitar problemas de PATH
-          # Y asumimos que NOPASSWD ya está configurado
-          /usr/bin/sudo -n /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
+          # Stop the message listener service before updating
+          echo "⏹️ Stopping Discord message listener service..."
+          /usr/bin/sudo -n /usr/bin/systemctl stop discord-message-listener || echo "⚠️ Service was not running or failed to stop, continuing."
 
           # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
           echo "🔧 Fixing file ownership (as safeguard)..."
-          # Aquí, NO USAMOS sudo si deployuser ya es el dueño
-          # Solo se ejecutaría si los permisos se corrompieran (por root u otro proceso)
-          /usr/bin/sudo -n /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)." # Added fallback
+          /usr/bin/sudo -n /usr/bin/chown -R deployuser:deployuser /opt/discord-message-listener || echo "⚠️ Could not set ownership (might not be necessary)."
 
           # Handle git repository setup
           echo "📥 Setting up repository..."
           if [ ! -d ".git" ]; then
             echo "🔄 No git repository found, cloning..."
             # Remove any existing files first (ensure it's safe)
-            rm -rf /opt/discord-bot/* /opt/discord-bot/.[^.]* 2>/dev/null || true
+            rm -rf /opt/discord-message-listener/* /opt/discord-message-listener/.[^.]* 2>/dev/null || true
             git clone https://github.com/${{ github.repository }}.git . || { echo "❌ Failed to clone repository"; exit 1; }
-            git config --global --add safe.directory /opt/discord-bot
+            git config --global --add safe.directory /opt/discord-message-listener
           else
             echo "📦 Updating existing repository..."
             # Ensure correct ownership before git operations (again, a safeguard)
-            git config --global --add safe.directory /opt/discord-bot
+            git config --global --add safe.directory /opt/discord-message-listener
             git clean -fdx  # Remove untracked files and directories
             git fetch origin main || { echo "❌ Failed to fetch latest changes"; exit 1; }
             git reset --hard origin/main || { echo "❌ Failed to reset to latest changes"; exit 1; }
@@ -101,20 +97,20 @@ jobs:
 
           # Create .env file with secrets
           echo "🔑 Creating .env file with secrets..."
-          # Esto es CRÍTICO. ¡NUNCA pongas tus tokens directamente aquí!
-          # Usa los GitHub Secrets.
           echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
-          echo "PREFIX=!" >> .env
+          echo "MONITORING_SERVER_ID=${{ secrets.MONITORING_SERVER_ID }}" >> .env
+          echo "MONITORING_CHANNEL_IDS=${{ secrets.MONITORING_CHANNEL_IDS }}" >> .env
+          echo "LOG_FILE=./logs/messages.txt" >> .env
           # Asegúrate de que .env no tiene permisos de lectura para todos
           chmod 600 .env
 
-          # Start the bot service
-          echo "▶️ Starting Discord bot service..."
-          /usr/bin/sudo -n /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
+          # Start the message listener service
+          echo "▶️ Starting Discord message listener service..."
+          /usr/bin/sudo -n /usr/bin/systemctl start discord-message-listener || { echo "❌ Failed to start Discord message listener service"; exit 1; }
 
           # Check service status
           echo "🔍 Checking service status..."
-          /usr/bin/sudo -n /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
+          /usr/bin/sudo -n /usr/bin/systemctl is-active discord-message-listener --quiet && echo "✅ Discord message listener is running" || { echo "❌ Failed to start Discord message listener"; exit 1; }
 
           echo "🎉 Deployment completed successfully!"
         EOF

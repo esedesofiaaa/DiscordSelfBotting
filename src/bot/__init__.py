@@ -1,3 +1,0 @@
-"""
-Bot client module
-"""
