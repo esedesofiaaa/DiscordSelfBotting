@@ -7,17 +7,17 @@ set -e
 echo "🚀 Setting up Discord Message Listener environment on Linode..."
 
 # Create dedicated user for the listener
-echo "👤 Creating discord-bot user..."
-sudo useradd -m -s /bin/bash discord-bot || echo "User already exists"
+echo "👤 Creating deployuser user..."
+sudo useradd -m -s /bin/bash deployuser || echo "User already exists"
 
 # Create project directory (use existing directory structure for compatibility)
 echo "📁 Creating project directory..."
 sudo mkdir -p /opt/discord-bot
-sudo chown discord-bot:discord-bot /opt/discord-bot
+sudo chown deployuser:deployuser /opt/discord-bot
 
-# Switch to discord-bot user for the rest of the setup
-echo "🔄 Switching to discord-bot user..."
-sudo -u discord-bot bash << 'EOF'
+# Switch to deployuser user for the rest of the setup
+echo "🔄 Switching to deployuser user..."
+sudo -u deployuser bash << 'EOF'
 cd /opt/discord-bot
 
 # Clone the repository
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 # Create logs directory
 mkdir -p logs
 
-echo "✅ Environment setup completed for discord-bot user"
+echo "✅ Environment setup completed for deployuser user"
 EOF
 
 # Copy and setup systemd service
@@ -51,8 +51,9 @@ sudo cp discord-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable discord-bot
 
-# Configure passwordless sudo for discord-bot user for systemctl commands
+# Configure passwordless sudo for deployuser user for systemctl commands
 echo "🔐 Configuring passwordless sudo for systemctl commands..."
+<<<<<<< HEAD
 sudo tee /etc/sudoers.d/discord-bot << 'SUDOERS_EOF'
 # Allow discord-bot user to manage discord-bot service without password
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl start discord-bot
@@ -60,12 +61,24 @@ discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl stop discord-bot
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-bot
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl status discord-bot
 discord-bot ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-bot
+=======
+sudo tee /etc/sudoers.d/deployuser << 'SUDOERS_EOF'
+# Allow deployuser user to manage discord-bot service without password
+deployuser ALL=(ALL) NOPASSWD: /bin/systemctl start discord-bot
+deployuser ALL=(ALL) NOPASSWD: /bin/systemctl stop discord-bot
+deployuser ALL=(ALL) NOPASSWD: /bin/systemctl restart discord-bot
+deployuser ALL=(ALL) NOPASSWD: /bin/systemctl status discord-bot
+deployuser ALL=(ALL) NOPASSWD: /bin/systemctl is-active discord-bot
+>>>>>>> 97e4673 (refactor: Update service user references from 'discord-bot' to 'deployuser' and fix log file environment variable typo)
 # Allow chown for fixing ownership issues during deployment
-discord-bot ALL=(ALL) NOPASSWD: /bin/chown -R discord-bot:discord-bot /opt/discord-bot
+deployuser ALL=(ALL) NOPASSWD: /bin/chown -R deployuser:deployuser /opt/discord-bot
+# Allow copying service files
+deployuser ALL=(ALL) NOPASSWD: /bin/cp /opt/discord-bot/discord-bot.service /etc/systemd/system/
+deployuser ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
 SUDOERS_EOF
 
 # Set proper permissions for sudoers file
-sudo chmod 440 /etc/sudoers.d/discord-bot
+sudo chmod 440 /etc/sudoers.d/deployuser
 
 # Setup firewall (if needed)
 echo "🔥 Configuring firewall..."
