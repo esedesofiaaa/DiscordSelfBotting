@@ -37,21 +37,26 @@ jobs:
     - name: Validate configuration
       run: |
         source venv/bin/activate
-        # Test that main.py can be imported without errors
+        # Test that simple_message_listener.py can be imported without errors
         python -c "
         import sys
         import os
         # Mock environment variables for testing
         os.environ['DISCORD_TOKEN'] = 'test_token_for_import_test'
+        os.environ['MONITORING_SERVER_ID'] = '123456789'
         
         try:
             # Test imports without actually running the bot
-            import config
-            print('✅ Config module loads successfully')
+            import simple_message_listener
+            print('✅ Simple message listener module loads successfully')
             
-            # Basic validation
-            assert hasattr(config, 'TOKEN'), 'TOKEN not found in config'
-            assert hasattr(config, 'PREFIX'), 'PREFIX not found in config'
+            # Test that the class can be instantiated
+            listener = simple_message_listener.SimpleMessageListener()
+            print('✅ SimpleMessageListener class instantiation works')
+            
+            # Test basic validation
+            assert listener.token == 'test_token_for_import_test', 'Token not loaded correctly'
+            assert listener.target_server_id == '123456789', 'Server ID not loaded correctly'
             print('✅ Configuration validation passed')
             
         except Exception as e:
