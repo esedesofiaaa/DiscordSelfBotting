@@ -20,7 +20,7 @@ class SimpleMessageListener:
         self.token = os.getenv('DISCORD_TOKEN')
         self.target_server_id = os.getenv('MONITORING_SERVER_ID', '1331752826082295899')
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
-        self.log_file = os.getenv('LOG_FILdiscord-bot.serviceE', './logs/messages.txt')
+        self.log_file = os.getenv('LOG_FILE', './logs/messages.txt')
         
         # Cliente de Discord (self-bot)
         self.client = discord.Client()
