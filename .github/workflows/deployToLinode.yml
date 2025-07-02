@@ -8,6 +8,10 @@ on:
       - 'README_SIMPLE_LISTENER.md'
       - 'docs/**'
       - '*.md'
+      - '.github/workflows/**'
+      - '.gitignore'
+      - '.vscode/**'
+      - 'test/**'
   workflow_dispatch:  # Permite deployment manual
     inputs:
       environment:
@@ -98,9 +102,11 @@ jobs:
           # Create .env file with secrets
           echo "🔑 Creating .env file with secrets..."
           echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
-          echo "MONITORING_SERVER_ID=${{ secrets.MONITORING_SERVER_ID }}" >> .env
-          echo "MONITORING_CHANNEL_IDS=${{ secrets.MONITORING_CHANNEL_IDS }}" >> .env
+          echo "MONITORING_SERVER_ID=${{ vars.MONITORING_SERVER_ID }}" >> .env
+          echo "MONITORING_CHANNEL_IDS=${{ vars.MONITORING_CHANNEL_IDS }}" >> .env
           echo "LOG_FILE=./logs/messages.txt" >> .env
+          echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .env
+          echo "NOTION_DATABASE_ID=${{ vars.NOTION_DATABASE_ID }}" >> .env
           # Asegúrate de que .env no tiene permisos de lectura para todos
           chmod 600 .env
 

@@ -1,12 +1,14 @@
 """
-Discord Message Listener - Simple Version
+Discord Message Listener - Simple Version con integración a Notion
 Un bot que únicamente escucha y registra todos los mensajes de un servidor o canal específico
+Guarda la información directamente en una base de datos de Notion
 """
 import discord
 import os
 import datetime
 from typing import Optional, List
 from dotenv import load_dotenv
+from notion_client import Client
 
 # Cargar variables de entorno
 load_dotenv()
@@ -22,10 +24,24 @@ class SimpleMessageListener:
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
         self.log_file = os.getenv('LOG_FILE', './logs/messages.txt')
         
+        # Configuración de Notion
+        self.notion_token = os.getenv('NOTION_TOKEN')
+        self.notion_database_id = os.getenv('NOTION_DATABASE_ID')
+        self.notion_client = None
+        
+        # Inicializar Notion si está configurado
+        if self.notion_token and self.notion_database_id:
+            try:
+                self.notion_client = Client(auth=self.notion_token)
+                print("✅ Cliente de Notion inicializado correctamente")
+            except Exception as e:
+                print(f"❌ Error al inicializar Notion: {e}")
+                self.notion_client = None
+        
         # Cliente de Discord (self-bot)
         self.client = discord.Client()
         
-        # Asegurar que el directorio de logs existe
+        # Asegurar que el directorio de logs existe (backup)
         os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
         
         # Configurar eventos
@@ -106,8 +122,140 @@ class SimpleMessageListener:
         
         return discord.utils.get(self.client.guilds, id=int(self.target_server_id))
     
+    def _save_message_to_notion(self, message: discord.Message):
+        """Guardar mensaje en la base de datos de Notion"""
+        if not self.notion_client or not self.notion_database_id:
+            return False
+        
+        try:
+            # Obtener información del mensaje
+            server_name = message.guild.name if message.guild else 'DM'
+            
+            try:
+                channel_name = getattr(message.channel, 'name', 'DM')
+            except:
+                channel_name = 'DM'
+            
+            # Obtener nombre del autor
+            if hasattr(message.author, 'discriminator') and message.author.discriminator == '0':
+                author_name = f"@{message.author.name}"
+            else:
+                author_name = f"@{message.author.name}"
+            
+            content = message.content or '[Sin contenido de texto]'
+            
+            # Verificar si hay archivos adjuntos
+            has_attachment = len(message.attachments) > 0
+            
+            # Preparar archivos adjuntos para Notion (solo URLs de los archivos)
+            attachment_files = []
+            if has_attachment:
+                for attachment in message.attachments:
+                    # Notion espera objetos de archivo con nombre y URL externa
+                    attachment_files.append({
+                        "name": attachment.filename,
+                        "external": {
+                            "url": attachment.url
+                        }
+                    })
+            
+            # Verificar si hay URLs en el contenido
+            import re
+            url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+            urls = re.findall(url_pattern, content)
+            has_url = len(urls) > 0
+            url_adjunta = urls[0] if urls else ""
+            
+            # URL del mensaje original
+            message_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}" if message.guild else ""
+            
+            # Fecha en formato ISO
+            fecha_mensaje = message.created_at.isoformat()
+            
+            # Crear el objeto de página para Notion
+            notion_page = {
+                "parent": {"database_id": self.notion_database_id},
+                "properties": {
+                    "Autor": {
+                        "title": [
+                            {
+                                "text": {
+                                    "content": author_name
+                                }
+                            }
+                        ]
+                    },
+                    "Fecha": {
+                        "date": {
+                            "start": fecha_mensaje
+                        }
+                    },
+                    "Servidor": {
+                        "select": {
+                            "name": server_name
+                        }
+                    },
+                    "Canal": {
+                        "select": {
+                            "name": channel_name
+                        }
+                    },
+                    "Contenido": {
+                        "rich_text": [
+                            {
+                                "text": {
+                                    "content": content[:2000]  # Notion tiene límite de caracteres
+                                }
+                            }
+                        ]
+                    },
+                    "URL adjunta": {
+                        "url": url_adjunta if has_url else None
+                    },
+                    "URL del mensaje": {
+                        "url": message_url if message_url else None
+                    }
+                }
+            }
+            
+            # Añadir archivos adjuntos solo si existen
+            if attachment_files:
+                notion_page["properties"]["Archivo Adjunto"] = {
+                    "files": attachment_files
+                }
+            
+            # Crear la página en Notion
+            response = self.notion_client.pages.create(**notion_page)
+            
+            print(f"✅ Mensaje guardado en Notion: {author_name} en #{channel_name}")
+            return True
+                
+        except Exception as e:
+            print(f"❌ Error al guardar mensaje en Notion: {e}")
+            return False
+    
     def _log_message(self, message: discord.Message):
-        """Registrar mensaje en el archivo de texto"""
+        """Registrar mensaje en Notion y como backup en archivo de texto"""
+        try:
+            # Intentar guardar en Notion primero
+            notion_success = False
+            if self.notion_client:
+                notion_success = self._save_message_to_notion(message)
+            
+            # Si Notion falla o no está configurado, usar archivo de texto como backup
+            if not notion_success:
+                self._log_message_to_file(message)
+                
+        except Exception as e:
+            print(f"❌ Error al registrar mensaje: {e}")
+            # Como último recurso, intentar guardar en archivo
+            try:
+                self._log_message_to_file(message)
+            except:
+                print(f"❌ Error crítico: No se pudo guardar el mensaje de ninguna manera")
+    
+    def _log_message_to_file(self, message: discord.Message):
+        """Registrar mensaje en el archivo de texto (método de backup)"""
         try:
             timestamp = datetime.datetime.now().isoformat()
             
@@ -148,10 +296,10 @@ class SimpleMessageListener:
                 f.write(log_separator)
             
             # Mostrar en consola
-            print(f"📝 [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}")
+            print(f"📝 [BACKUP FILE] [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}")
             
         except Exception as e:
-            print(f"❌ Error al registrar mensaje: {e}")
+            print(f"❌ Error al registrar mensaje en archivo: {e}")
     
     def validate_config(self) -> bool:
         """Validar configuración del bot"""
@@ -162,6 +310,13 @@ class SimpleMessageListener:
         if not self.target_server_id:
             print("❌ ID del servidor no configurado. Configura MONITORING_SERVER_ID en el archivo .env")
             return False
+        
+        # Validar configuración de Notion (opcional pero recomendada)
+        if not self.notion_token or not self.notion_database_id:
+            print("⚠️  Configuración de Notion no encontrada. Los mensajes se guardarán solo en archivo de texto.")
+            print("   Para usar Notion, configura NOTION_TOKEN y NOTION_DATABASE_ID en el archivo .env")
+        else:
+            print("✅ Configuración de Notion encontrada. Los mensajes se guardarán en Notion.")
         
         return True
     
@@ -174,7 +329,8 @@ class SimpleMessageListener:
         print("📋 Configuración:")
         print(f"   - Servidor: {self.target_server_id}")
         print(f"   - Canales: {'Específicos' if self.target_channel_ids else 'Todos'}")
-        print(f"   - Log file: {self.log_file}")
+        print(f"   - Notion: {'✅ Configurado' if self.notion_client else '❌ No configurado'}")
+        print(f"   - Backup file: {self.log_file}")
         print("-" * 60)
         
         try:
