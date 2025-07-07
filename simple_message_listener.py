@@ -122,8 +122,48 @@ class SimpleMessageListener:
         
         return discord.utils.get(self.client.guilds, id=int(self.target_server_id))
     
+    def _find_message_in_notion(self, message_id: str) -> Optional[str]:
+        """
+        Buscar un mensaje en Notion por su ID y retornar el ID de la página de Notion
+        """
+        if not self.notion_client or not self.notion_database_id:
+            return None
+        
+        try:
+            # Buscar en la base de datos de Notion usando el ID del mensaje
+            query_filter = {
+                "property": "Message ID",
+                "title": {
+                    "equals": message_id
+                }
+            }
+            
+            print(f"🔍 Buscando mensaje en Notion: {message_id}")
+            
+            # Realizar la consulta - notion-client 2.2.1 es síncrono
+            response = self.notion_client.databases.query(
+                database_id=self.notion_database_id,
+                filter=query_filter
+            )
+            
+            # Acceder a los resultados usando indexación directa
+            # Ignorar advertencias del linter - notion-client 2.2.1 devuelve un dict
+            results = response['results']  # type: ignore
+            
+            if results and len(results) > 0:
+                page_id = results[0]['id']
+                print(f"✅ Mensaje encontrado en Notion: {page_id}")
+                return page_id
+            else:
+                print(f"❌ Mensaje no encontrado en Notion: {message_id}")
+                return None
+            
+        except Exception as e:
+            print(f"❌ Error al buscar mensaje en Notion: {e}")
+            return None
+    
     def _save_message_to_notion(self, message: discord.Message):
-        """Guardar mensaje en la base de datos de Notion"""
+        """Guardar mensaje en la base de datos de Notion con soporte para respuestas"""
         if not self.notion_client or not self.notion_database_id:
             return False
         
@@ -143,6 +183,9 @@ class SimpleMessageListener:
                 author_name = f"@{message.author.name}"
             
             content = message.content or '[Sin contenido de texto]'
+            
+            # ID del mensaje de Discord
+            message_id = str(message.id)
             
             # Verificar si hay archivos adjuntos
             has_attachment = len(message.attachments) > 0
@@ -172,12 +215,32 @@ class SimpleMessageListener:
             # Fecha en formato ISO
             fecha_mensaje = message.created_at.isoformat()
             
+            # Verificar si es una respuesta a otro mensaje
+            replied_message_notion_id = None
+            if message.reference and message.reference.message_id:
+                replied_message_id = str(message.reference.message_id)
+                replied_message_notion_id = self._find_message_in_notion(replied_message_id)
+                
+                if replied_message_notion_id:
+                    print(f"🔗 Mensaje es respuesta a: {replied_message_id}")
+                else:
+                    print(f"⚠️  Mensaje original no encontrado en Notion: {replied_message_id}")
+            
             # Crear el objeto de página para Notion
             notion_page = {
                 "parent": {"database_id": self.notion_database_id},
                 "properties": {
-                    "Autor": {
+                    "Message ID": {
                         "title": [
+                            {
+                                "text": {
+                                    "content": message_id
+                                }
+                            }
+                        ]
+                    },
+                    "Autor": {
+                        "rich_text": [
                             {
                                 "text": {
                                     "content": author_name
@@ -224,10 +287,21 @@ class SimpleMessageListener:
                     "files": attachment_files
                 }
             
+            # Añadir relación con mensaje respondido si existe
+            if replied_message_notion_id:
+                notion_page["properties"]["Replied message"] = {
+                    "relation": [
+                        {
+                            "id": replied_message_notion_id
+                        }
+                    ]
+                }
+            
             # Crear la página en Notion
             response = self.notion_client.pages.create(**notion_page)
             
-            print(f"✅ Mensaje guardado en Notion: {author_name} en #{channel_name}")
+            reply_info = " (respuesta)" if replied_message_notion_id else ""
+            print(f"✅ Mensaje guardado en Notion: {author_name} en #{channel_name}{reply_info}")
             return True
                 
         except Exception as e:
