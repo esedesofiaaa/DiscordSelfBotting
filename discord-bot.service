@@ -1,6 +1,6 @@
 # Discord Message Listener Systemd Service Configuration
 # Save this file as: /etc/systemd/system/discord-bot.service
-#
+# 
 # Installation commands:
 # sudo cp discord-bot.service /etc/systemd/system/
 # sudo systemctl daemon-reload
@@ -15,10 +15,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=deployuser # Asegúrate de que este usuario exista en tu sistema (ej: sudo adduser deployuser)
-Group=deployuser # Asegúrate de que este grupo exista y el usuario pertenezca a él
+User=deployuser
+Group=deployuser
 WorkingDirectory=/opt/discord-bot
-Environment="PATH=/opt/discord-bot/venv/bin"
+Environment=PATH=/opt/discord-bot/venv/bin
 ExecStart=/opt/discord-bot/venv/bin/python simple_message_listener.py
 Restart=always
 RestartSec=10
