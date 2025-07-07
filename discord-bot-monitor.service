@@ -1,0 +1,28 @@
+[Unit]
+Description=Discord Bot Monitor - Sistema de Monitoreo de Heartbeats
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=raul
+Group=raul
+WorkingDirectory=/home/raul/Documents/Work/DiscordSelfBotting
+ExecStart=/usr/bin/python3 /home/raul/Documents/Work/DiscordSelfBotting/monitor_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Variables de entorno
+Environment=PYTHONUNBUFFERED=1
+
+# Configuración de seguridad
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/raul/Documents/Work/DiscordSelfBotting/logs
+
+[Install]
+WantedBy=multi-user.target

@@ -2,13 +2,16 @@
 Discord Message Listener - Simple Version con integración a Notion
 Un bot que únicamente escucha y registra todos los mensajes de un servidor o canal específico
 Guarda la información directamente en una base de datos de Notion
+Incluye sistema de monitoreo de heartbeats con Healthchecks.io
 """
 import discord
 import os
 import datetime
+import asyncio
 from typing import Optional, List
 from dotenv import load_dotenv
 from notion_client import Client
+from heartbeat_system import HeartbeatSystem
 
 # Cargar variables de entorno
 load_dotenv()
@@ -28,6 +31,16 @@ class SimpleMessageListener:
         self.notion_token = os.getenv('NOTION_TOKEN')
         self.notion_database_id = os.getenv('NOTION_DATABASE_ID')
         self.notion_client = None
+        
+        # Configuración de Heartbeats
+        self.heartbeat_url = os.getenv('HEALTHCHECKS_PING_URL', 'https://hc-ping.com/f679a27c-8a41-4ae2-9504-78f1b260e71d')
+        self.heartbeat_interval = int(os.getenv('HEARTBEAT_INTERVAL', '300'))  # 5 minutos por defecto
+        self.heartbeat_system = None
+        
+        # Inicializar sistema de heartbeats
+        if self.heartbeat_url:
+            self.heartbeat_system = HeartbeatSystem(self.heartbeat_url, self.heartbeat_interval)
+            print(f"✅ Sistema de heartbeats configurado (intervalo: {self.heartbeat_interval}s)")
         
         # Inicializar Notion si está configurado
         if self.notion_token and self.notion_database_id:
@@ -76,6 +89,13 @@ class SimpleMessageListener:
                 print("📋 Escuchando TODOS los canales del servidor")
             
             print(f"📁 Guardando mensajes en: {self.log_file}")
+            
+            # Iniciar sistema de heartbeats
+            if self.heartbeat_system:
+                print("💓 Iniciando sistema de heartbeats...")
+                # Crear tarea para el sistema de heartbeats
+                asyncio.create_task(self.heartbeat_system.start_heartbeat())
+            
             print("-" * 60)
             
             # Verificar si el servidor existe
@@ -97,6 +117,26 @@ class SimpleMessageListener:
         @self.client.event
         async def on_error(event, *args, **kwargs):
             print(f"❌ Error en evento {event}: {args}")
+            
+            # Enviar ping de error al sistema de heartbeats
+            if self.heartbeat_system:
+                await self.heartbeat_system.send_ping("fail", f"Error en evento {event}: {str(args)[:100]}")
+        
+        @self.client.event
+        async def on_disconnect():
+            print("🔌 Bot desconectado")
+            
+            # Enviar ping de desconexión
+            if self.heartbeat_system:
+                await self.heartbeat_system.send_ping("fail", "Bot desconectado de Discord")
+        
+        @self.client.event
+        async def on_resumed():
+            print("🔄 Conexión reanudada")
+            
+            # Enviar ping de reconexión
+            if self.heartbeat_system:
+                await self.heartbeat_system.send_ping("success", "Conexión reanudada exitosamente")
     
     def _should_monitor_message(self, message: discord.Message) -> bool:
         """Determinar si el mensaje debe ser registrado"""
@@ -318,6 +358,12 @@ class SimpleMessageListener:
         else:
             print("✅ Configuración de Notion encontrada. Los mensajes se guardarán en Notion.")
         
+        # Validar configuración de heartbeats
+        if not self.heartbeat_url:
+            print("⚠️  URL de heartbeats no configurada. Configura HEALTHCHECKS_PING_URL en el archivo .env")
+        else:
+            print(f"✅ Sistema de heartbeats configurado: {self.heartbeat_url[:50]}...")
+        
         return True
     
     def run(self):
@@ -330,6 +376,7 @@ class SimpleMessageListener:
         print(f"   - Servidor: {self.target_server_id}")
         print(f"   - Canales: {'Específicos' if self.target_channel_ids else 'Todos'}")
         print(f"   - Notion: {'✅ Configurado' if self.notion_client else '❌ No configurado'}")
+        print(f"   - Heartbeats: {'✅ Configurado' if self.heartbeat_system else '❌ No configurado'}")
         print(f"   - Backup file: {self.log_file}")
         print("-" * 60)
         
@@ -338,10 +385,33 @@ class SimpleMessageListener:
                 self.client.run(self.token)
             else:
                 print("❌ Token no válido")
+        except KeyboardInterrupt:
+            print("\n⏹️ Deteniendo bot...")
+            # Detener sistema de heartbeats
+            if self.heartbeat_system:
+                asyncio.run(self.heartbeat_system.stop_heartbeat())
         except Exception as error:
             print(f"❌ Error al iniciar el bot: {error}")
             if "Improper token" in str(error):
                 print("🔑 Asegúrate de usar un token de Discord válido")
+            
+            # Enviar ping de error crítico
+            if self.heartbeat_system:
+                asyncio.run(self.heartbeat_system.send_ping("fail", f"Error crítico: {str(error)[:100]}"))
+    
+    async def get_heartbeat_status(self) -> dict:
+        """Obtener estado del sistema de heartbeats"""
+        if not self.heartbeat_system:
+            return {"status": "not_configured"}
+        
+        return self.heartbeat_system.get_status()
+    
+    async def send_manual_heartbeat(self, message: str = "Ping manual desde bot"):
+        """Enviar heartbeat manual"""
+        if not self.heartbeat_system:
+            return False
+        
+        return await self.heartbeat_system.send_manual_ping(message)
 
 
 def main():

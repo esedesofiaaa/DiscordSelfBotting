@@ -11,6 +11,9 @@ Un bot de Discord que escucha y registra todos los mensajes de un servidor o can
 - ✅ **Información completa** - Autor, fecha, servidor, canal, contenido, archivos adjuntos, URLs
 - ✅ **Fácil configuración** con archivos `.env`
 - ✅ **Manejo robusto de errores** con múltiples métodos de respaldo
+- ✅ **Sistema de monitoreo de heartbeats** - Alertas automáticas con Healthchecks.io
+- ✅ **Auto-reinicio** - Monitor independiente que reinicia el bot si se cae
+- ✅ **Monitoreo dual** - Bot principal + monitor independiente para máxima confiabilidad
 
 ## 📋 Requisitos
 
@@ -91,7 +94,7 @@ Este script verificará:
 
 ## 🚀 Uso
 
-### Ejecutar el bot
+### Ejecutar el bot básico
 ```bash
 python simple_message_listener.py
 ```
@@ -101,13 +104,41 @@ O usando el script de inicio:
 ./start_simple_listener.sh
 ```
 
+### Sistema de Monitoreo con Heartbeats
+
+Para máxima confiabilidad, usa el sistema de monitoreo integrado:
+
+```bash
+# Probar conexión con Healthchecks.io
+python3 test_heartbeat.py
+
+# Iniciar bot con heartbeats automáticos
+./start_simple_listener.sh
+
+# Iniciar monitor independiente (recomendado para producción)
+./start_monitor.sh start
+
+# Ver estado del monitor
+./start_monitor.sh status
+
+# Ver logs del monitor
+./start_monitor.sh logs
+```
+
+**📖 Documentación completa**: Ver [README_HEARTBEATS.md](README_HEARTBEATS.md)
+
 ### Ejecutar como servicio (Linux)
 ```bash
-# Instalar el servicio
+# Instalar el servicio del bot
 sudo cp discord-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable discord-bot
 sudo systemctl start discord-bot
+
+# Instalar el servicio del monitor (opcional)
+sudo cp discord-bot-monitor.service /etc/systemd/system/
+sudo systemctl enable discord-bot-monitor
+sudo systemctl start discord-bot-monitor
 
 # Ver logs
 sudo systemctl status discord-bot
