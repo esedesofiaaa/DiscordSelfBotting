@@ -164,7 +164,7 @@ class SimpleMessageListener:
     
     def _find_message_in_notion(self, message_id: str) -> Optional[str]:
         """
-        Buscar un mensaje en Notion por su ID y retornar el ID de la página de Notion
+        Buscar un mensaje en Notion por su ID y retornar la URL de la página de Notion
         """
         if not self.notion_client or not self.notion_database_id:
             return None
@@ -192,8 +192,10 @@ class SimpleMessageListener:
             
             if results and len(results) > 0:
                 page_id = results[0]['id']
-                print(f"✅ Mensaje encontrado en Notion: {page_id}")
-                return page_id
+                # Generar la URL de la página de Notion
+                page_url = f"https://www.notion.so/{page_id.replace('-', '')}"
+                print(f"✅ Mensaje encontrado en Notion: {page_url}")
+                return page_url
             else:
                 print(f"❌ Mensaje no encontrado en Notion: {message_id}")
                 return None
@@ -256,12 +258,12 @@ class SimpleMessageListener:
             fecha_mensaje = message.created_at.isoformat()
             
             # Verificar si es una respuesta a otro mensaje
-            replied_message_notion_id = None
+            replied_message_notion_url = None
             if message.reference and message.reference.message_id:
                 replied_message_id = str(message.reference.message_id)
-                replied_message_notion_id = self._find_message_in_notion(replied_message_id)
+                replied_message_notion_url = self._find_message_in_notion(replied_message_id)
                 
-                if replied_message_notion_id:
+                if replied_message_notion_url:
                     print(f"🔗 Mensaje es respuesta a: {replied_message_id}")
                 else:
                     print(f"⚠️  Mensaje original no encontrado en Notion: {replied_message_id}")
@@ -327,20 +329,16 @@ class SimpleMessageListener:
                     "files": attachment_files
                 }
             
-            # Añadir relación con mensaje respondido si existe
-            if replied_message_notion_id:
-                notion_page["properties"]["Replied message"] = {
-                    "relation": [
-                        {
-                            "id": replied_message_notion_id
-                        }
-                    ]
+            # Añadir URL del mensaje original si es una respuesta
+            if replied_message_notion_url:
+                notion_page["properties"]["Original Message"] = {
+                    "url": replied_message_notion_url
                 }
             
             # Crear la página en Notion
             response = self.notion_client.pages.create(**notion_page)
             
-            reply_info = " (respuesta)" if replied_message_notion_id else ""
+            reply_info = " (respuesta)" if replied_message_notion_url else ""
             print(f"✅ Mensaje guardado en Notion: {author_name} en #{channel_name}{reply_info}")
             return True
                 
