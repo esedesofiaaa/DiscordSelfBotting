@@ -152,7 +152,7 @@ class TestNotionIntegration:
                 'URL adjunta': 'url',
                 'Archivo Adjunto': 'files',
                 'URL del mensaje': 'url',
-                'Replied message': 'relation'
+                'Original Message': 'url'  # Cambiado de relación a URL
             }
             
             missing_properties = []
@@ -230,49 +230,75 @@ class TestNotionIntegration:
             from simple_message_listener import SimpleMessageListener
             
             listener = SimpleMessageListener()
-            found_page_id = listener._find_message_in_notion(test_message_id)
+            found_page_url = listener._find_message_in_notion(test_message_id)
             
-            # Nota: La búsqueda puede fallar debido a la implementación temporal
-            # pero el mensaje debería haberse creado correctamente
+            # Verificar que ahora retorna una URL en lugar de un ID
             print(f"✅ Mensaje de prueba creado con ID: {test_message_id}")
-            if found_page_id:
-                print(f"✅ Mensaje encontrado en búsqueda: {found_page_id}")
+            if found_page_url:
+                print(f"✅ Mensaje encontrado, URL: {found_page_url}")
+                # Verificar que es una URL válida de Notion
+                assert found_page_url.startswith("https://www.notion.so/"), "Debe retornar una URL de Notion válida"
             else:
-                print("⚠️  Búsqueda no implementada completamente (esperado)")
+                print("⚠️  Mensaje no encontrado (puede ser debido a timing de indexación)")
             
         except Exception as e:
             pytest.fail(f"Error al crear mensaje con ID: {e}")
             
-    def test_reply_relationship_structure(self):
-        """Test that reply relationships can be created in Notion"""
+    def test_original_message_url_structure(self):
+        """Test that original message URL property can be created in Notion"""
         if not self.notion_token or not self.database_id:
             pytest.skip("NOTION_TOKEN or NOTION_DATABASE_ID not available")
             
         notion = Client(auth=self.notion_token)
         
         try:
-            # Verificar que la propiedad "Replied message" existe y es del tipo correcto
+            # Verificar que la propiedad "Original Message" existe y es del tipo correcto
             database = notion.databases.retrieve(database_id=self.database_id)
             properties = database['properties']  # type: ignore
             
-            assert 'Replied message' in properties, "Propiedad 'Replied message' no encontrada"
+            # La propiedad puede no existir hasta que se use por primera vez
+            if 'Original Message' in properties:
+                original_msg_prop = properties['Original Message']
+                assert original_msg_prop['type'] == 'url', "Propiedad 'Original Message' debe ser de tipo 'url'"
+                print("✅ Propiedad 'Original Message' configurada correctamente como URL")
+            else:
+                print("ℹ️  Propiedad 'Original Message' se creará automáticamente al usarse")
             
-            replied_prop = properties['Replied message']
-            assert replied_prop['type'] == 'relation', "Propiedad 'Replied message' debe ser de tipo 'relation'"
+            # Test crear un mensaje con Original Message URL
+            test_page = {
+                "parent": {"database_id": self.database_id},
+                "properties": {
+                    "Message ID": {
+                        "title": [{"text": {"content": "test_reply_message_789"}}]
+                    },
+                    "Autor": {
+                        "rich_text": [{"text": {"content": "Test Bot - Reply Message"}}]
+                    },
+                    "Fecha": {
+                        "date": {"start": "2025-07-07T10:00:00.000Z"}
+                    },
+                    "Servidor": {
+                        "select": {"name": "Test Server"}
+                    },
+                    "Canal": {
+                        "select": {"name": "test-channel"}
+                    },
+                    "Contenido": {
+                        "rich_text": [{"text": {"content": "Este es un mensaje de respuesta de prueba"}}]
+                    },
+                    "URL del mensaje": {
+                        "url": "https://discord.com/channels/123/456/789"
+                    },
+                    "Original Message": {
+                        "url": "https://www.notion.so/abcd1234567890abcdef"
+                    }
+                }
+            }
             
-            # Verificar que la relación apunta a la misma base de datos
-            relation_config = replied_prop['relation']
-            relation_db_id = relation_config['database_id']
+            response = notion.pages.create(**test_page)
+            assert response is not None, "Failed to create test message with Original Message URL"
             
-            # Normalizar ambos IDs removiendo guiones para comparar
-            normalized_relation_id = relation_db_id.replace('-', '')
-            normalized_self_id = self.database_id.replace('-', '')
-            
-            assert normalized_relation_id == normalized_self_id, \
-                f"La relación debe apuntar a la misma base de datos. " \
-                f"Relación: {relation_db_id}, Self: {self.database_id}"
-            
-            print("✅ Configuración de relaciones verificada correctamente")
+            print("✅ Mensaje con URL de mensaje original creado exitosamente")
             
         except Exception as e:
-            pytest.fail(f"Error al verificar configuración de relaciones: {e}")
+            pytest.fail(f"Error al verificar configuración de URL de mensaje original: {e}")
