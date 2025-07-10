@@ -154,13 +154,19 @@ class SimpleMessageListener:
         
         # Si no hay canales específicos, monitorear todos los canales del servidor
         return True
+
+
+
+
+
     
     def _get_target_server(self) -> Optional[discord.Guild]:
         """Obtener el servidor objetivo para monitoreo"""
         if not self.target_server_id.isdigit():
             return None
-        
         return discord.utils.get(self.client.guilds, id=int(self.target_server_id))
+
+
     
     def _find_message_in_notion(self, message_id: str) -> Optional[str]:
         """
