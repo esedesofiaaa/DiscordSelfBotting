@@ -23,7 +23,7 @@ class SimpleMessageListener:
     def __init__(self):
         # Configuración básica
         self.token = os.getenv('DISCORD_TOKEN')
-        self.target_server_id = os.getenv('MONITORING_SERVER_ID', '1331752826082295899')
+        self.target_server_id = os.getenv('MONITORING_SERVER_ID')
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
         self.log_file = os.getenv('LOG_FILE', './logs/messages.txt')
         
@@ -112,7 +112,7 @@ class SimpleMessageListener:
         async def on_message(message):
             # Registrar todos los mensajes que coincidan con los criterios de monitoreo
             if self._should_monitor_message(message):
-                self._log_message(message)
+                await self._log_message(message)
         
         @self.client.event
         async def on_error(event, *args, **kwargs):
@@ -162,13 +162,13 @@ class SimpleMessageListener:
     
     def _get_target_server(self) -> Optional[discord.Guild]:
         """Obtener el servidor objetivo para monitoreo"""
-        if not self.target_server_id.isdigit():
+        if not self.target_server_id or not self.target_server_id.isdigit():
             return None
         return discord.utils.get(self.client.guilds, id=int(self.target_server_id))
 
 
     
-    def _find_message_in_notion(self, message_id: str) -> Optional[str]:
+    async def _find_message_in_notion(self, message_id: str) -> Optional[str]:
         """
         Buscar un mensaje en Notion por su ID y retornar la URL de la página de Notion
         """
@@ -186,8 +186,9 @@ class SimpleMessageListener:
             
             print(f"🔍 Buscando mensaje en Notion: {message_id}")
             
-            # Realizar la consulta - notion-client 2.2.1 es síncrono
-            response = self.notion_client.databases.query(
+            # Realizar la consulta en un hilo para no bloquear el event loop
+            response = await asyncio.to_thread(
+                self.notion_client.databases.query,
                 database_id=self.notion_database_id,
                 filter=query_filter
             )
@@ -210,7 +211,7 @@ class SimpleMessageListener:
             print(f"❌ Error al buscar mensaje en Notion: {e}")
             return None
     
-    def _save_message_to_notion(self, message: discord.Message):
+    async def _save_message_to_notion(self, message: discord.Message):
         """Guardar mensaje en la base de datos de Notion con soporte para respuestas"""
         if not self.notion_client or not self.notion_database_id:
             return False
@@ -225,10 +226,7 @@ class SimpleMessageListener:
                 channel_name = 'DM'
             
             # Obtener nombre del autor
-            if hasattr(message.author, 'discriminator') and message.author.discriminator == '0':
-                author_name = f"@{message.author.name}"
-            else:
-                author_name = f"@{message.author.name}"
+            author_name = f"@{message.author.name}"
             
             content = message.content or '[Sin contenido de texto]'
             
@@ -267,7 +265,7 @@ class SimpleMessageListener:
             replied_message_notion_url = None
             if message.reference and message.reference.message_id:
                 replied_message_id = str(message.reference.message_id)
-                replied_message_notion_url = self._find_message_in_notion(replied_message_id)
+                replied_message_notion_url = await self._find_message_in_notion(replied_message_id)
                 
                 if replied_message_notion_url:
                     print(f"🔗 Mensaje es respuesta a: {replied_message_id}")
@@ -341,24 +339,28 @@ class SimpleMessageListener:
                     "url": replied_message_notion_url
                 }
             
-            # Crear la página en Notion
-            response = self.notion_client.pages.create(**notion_page)
+            # Crear la página en Notion en un hilo para no bloquear
+            response = await asyncio.to_thread(
+                self.notion_client.pages.create,
+                **notion_page
+            )
             
             reply_info = " (respuesta)" if replied_message_notion_url else ""
             print(f"✅ Mensaje guardado en Notion: {author_name} en #{channel_name}{reply_info}")
-            return True
-                
+            return response  # <-- CAMBIO: Retorna el objeto completo
+            
         except Exception as e:
             print(f"❌ Error al guardar mensaje en Notion: {e}")
-            return False
-    
-    def _log_message(self, message: discord.Message):
+            return None  # <-- CAMBIO: Retorna None en caso de error
+        
+    async def _log_message(self, message: discord.Message):
         """Registrar mensaje en Notion y como backup en archivo de texto"""
         try:
             # Intentar guardar en Notion primero
             notion_success = False
             if self.notion_client:
-                notion_success = self._save_message_to_notion(message)
+                notion_response = await self._save_message_to_notion(message)
+                notion_success = bool(notion_response)
             
             # Si Notion falla o no está configurado, usar archivo de texto como backup
             if not notion_success:
@@ -386,11 +388,8 @@ class SimpleMessageListener:
             except:
                 channel_name = 'DM'
             
-            # Obtener nombre del autor (usar el nuevo formato de Discord sin discriminador)
-            if hasattr(message.author, 'discriminator') and message.author.discriminator == '0':
-                author_name = f"@{message.author.name}"  # Nuevo formato
-            else:
-                author_name = f"@{message.author.name}"  # Simplificado para self-bot
+            # Obtener nombre del autor
+            author_name = f"@{message.author.name}"
             
             content = message.content or '[Sin contenido de texto]'
             
@@ -496,7 +495,6 @@ def main():
     """Punto de entrada principal"""
     listener = SimpleMessageListener()
     listener.run()
-
 
 if __name__ == "__main__":
     main()
