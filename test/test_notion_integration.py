@@ -130,15 +130,15 @@ async def test_page_creation_and_validation(listener, mock_message, mock_reply_m
     
     # Validación de la página inicial
     initial_props = call_args_initial['properties']
-    assert initial_props['Message ID']['title'][0]['text']['content'] == mock_message.id
-    assert initial_props['Autor']['rich_text'][0]['text']['content'] == f"@{mock_message.author.name}"
+    assert initial_props['Message ID']['rich_text'][0]['text']['content'] == mock_message.id
+    assert initial_props['Autor']['title'][0]['text']['content'] == f"@{mock_message.author.name}"
     assert initial_props['Contenido']['rich_text'][0]['text']['content'] == mock_message.content
     print("✅ Página inicial validada correctamente.")
 
     # Validación de la página de respuesta
     reply_props = call_args_reply['properties']
-    assert reply_props['Message ID']['title'][0]['text']['content'] == mock_reply_message.id
-    assert reply_props['Autor']['rich_text'][0]['text']['content'] == f"@{mock_reply_message.author.name}"
+    assert reply_props['Message ID']['rich_text'][0]['text']['content'] == mock_reply_message.id
+    assert reply_props['Autor']['title'][0]['text']['content'] == f"@{mock_reply_message.author.name}"
     
     # La validación más importante: verificar el enlace a la página original
     expected_original_url = f"https://www.notion.so/{created_page_id.replace('-', '')}"

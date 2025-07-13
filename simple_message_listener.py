@@ -277,7 +277,7 @@ class SimpleMessageListener:
                 "parent": {"database_id": self.notion_database_id},
                 "properties": {
                     "Message ID": {
-                        "title": [
+                        "rich_text": [
                             {
                                 "text": {
                                     "content": message_id
@@ -286,7 +286,7 @@ class SimpleMessageListener:
                         ]
                     },
                     "Autor": {
-                        "rich_text": [
+                        "title": [
                             {
                                 "text": {
                                     "content": author_name
