@@ -285,7 +285,7 @@ class SimpleMessageListener:
                             }
                         ]
                     },
-                    "Autor": {
+                    "Author": {
                         "title": [
                             {
                                 "text": {
@@ -294,22 +294,22 @@ class SimpleMessageListener:
                             }
                         ]
                     },
-                    "Fecha": {
+                    "Date": {
                         "date": {
                             "start": fecha_mensaje
                         }
                     },
-                    "Servidor": {
+                    "Server": {
                         "select": {
                             "name": server_name
                         }
                     },
-                    "Canal": {
+                    "Channel": {
                         "select": {
                             "name": channel_name
                         }
                     },
-                    "Contenido": {
+                    "Content": {
                         "rich_text": [
                             {
                                 "text": {
@@ -318,10 +318,10 @@ class SimpleMessageListener:
                             }
                         ]
                     },
-                    "URL adjunta": {
+                    "Attached URL": {
                         "url": url_adjunta if has_url else None
                     },
-                    "URL del mensaje": {
+                    "Message URL": {
                         "url": message_url if message_url else None
                     }
                 }
@@ -329,7 +329,7 @@ class SimpleMessageListener:
             
             # Añadir archivos adjuntos solo si existen
             if attachment_files:
-                notion_page["properties"]["Archivo Adjunto"] = {
+                notion_page["properties"]["Attached File"] = {
                     "files": attachment_files
                 }
             
