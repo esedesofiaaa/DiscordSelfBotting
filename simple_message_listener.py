@@ -1,8 +1,8 @@
 """
-Discord Message Listener - Simple Version con integración a Notion
-Un bot que únicamente escucha y registra todos los mensajes de un servidor o canal específico
-Guarda la información directamente en una base de datos de Notion
-Incluye sistema de monitoreo de heartbeats con Healthchecks.io
+Discord Message Listener - Simple Version with Notion integration
+A bot that listens and logs all messages from a specific server or channel.
+Saves information directly to a Notion database.
+Includes heartbeat monitoring system with Healthchecks.io.
 """
 import discord
 import os
@@ -13,59 +13,59 @@ from dotenv import load_dotenv
 from notion_client import Client
 from heartbeat_system import HeartbeatSystem
 
-# Cargar variables de entorno
+# Load environment variables
 load_dotenv()
 
 
 class SimpleMessageListener:
-    """Bot simple para escuchar y registrar mensajes de Discord"""
+    """Simple bot to listen and log Discord messages"""
     
     def __init__(self):
-        # Configuración básica
+        # Basic configuration
         self.token = os.getenv('DISCORD_TOKEN')
         self.target_server_id = os.getenv('MONITORING_SERVER_ID')
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
         self.log_file = os.getenv('LOG_FILE', './logs/messages.txt')
         
-        # Configuración de Notion
+        # Notion configuration
         self.notion_token = os.getenv('NOTION_TOKEN')
         self.notion_database_id = os.getenv('NOTION_DATABASE_ID')
         self.notion_client = None
         
-        # Configuración de Heartbeats
+        # Heartbeat configuration
         self.heartbeat_url = os.getenv('HEALTHCHECKS_PING_URL', 'https://hc-ping.com/f679a27c-8a41-4ae2-9504-78f1b260e71d')
-        self.heartbeat_interval = int(os.getenv('HEARTBEAT_INTERVAL', '300'))  # 5 minutos por defecto
+        self.heartbeat_interval = int(os.getenv('HEARTBEAT_INTERVAL', '300'))  # Default: 5 minutes
         self.heartbeat_system = None
         
-        # Inicializar sistema de heartbeats
+        # Initialize heartbeat system
         if self.heartbeat_url:
             self.heartbeat_system = HeartbeatSystem(self.heartbeat_url, self.heartbeat_interval)
-            print(f"✅ Sistema de heartbeats configurado (intervalo: {self.heartbeat_interval}s)")
+            print(f"✅ Heartbeat system configured (interval: {self.heartbeat_interval}s)")
         
-        # Inicializar Notion si está configurado
+        # Initialize Notion client if configured
         if self.notion_token and self.notion_database_id:
             try:
                 self.notion_client = Client(auth=self.notion_token)
-                print("✅ Cliente de Notion inicializado correctamente")
+                print("✅ Notion client initialized successfully")
             except Exception as e:
-                print(f"❌ Error al inicializar Notion: {e}")
+                print(f"❌ Error initializing Notion: {e}")
                 self.notion_client = None
         
-        # Cliente de Discord (self-bot)
+        # Discord client (self-bot)
         self.client = discord.Client()
         
-        # Asegurar que el directorio de logs existe (backup)
+        # Ensure log directory exists
         os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
         
-        # Configurar eventos
+        # Configure events
         self._setup_events()
     
     def _parse_channel_ids(self, channel_ids_str: str) -> List[str]:
-        """Parse comma-separated channel IDs, ignorando comentarios"""
+        """Parse comma-separated channel IDs, ignoring comments"""
         if not channel_ids_str.strip():
             return []
         
-        # Eliminar comentarios (todo después de #)
+        # Remove comments (everything after #)
         clean_str = channel_ids_str.split('#')[0].strip()
         
         if not clean_str:
@@ -74,109 +74,101 @@ class SimpleMessageListener:
         return [cid.strip() for cid in clean_str.split(',') if cid.strip()]
     
     def _setup_events(self):
-        """Configurar manejadores de eventos de Discord"""
+        """Configure Discord event handlers"""
         
         @self.client.event
         async def on_ready():
             if self.client.user:
-                print(f"🤖 Bot conectado como: {self.client.user}")
+                print(f"🤖 Bot connected as: {self.client.user}")
                 print(f"🆔 User ID: {self.client.user.id}")
-            print(f"📝 Escuchando servidor: {self.target_server_id}")
+            print(f"📝 Monitoring server: {self.target_server_id}")
             
             if self.target_channel_ids:
-                print(f"📋 Canales específicos: {', '.join(self.target_channel_ids)}")
+                print(f"📋 Specific channels: {', '.join(self.target_channel_ids)}")
             else:
-                print("📋 Escuchando TODOS los canales del servidor")
+                print("📋 Monitoring ALL channels in the server")
             
-            print(f"📁 Guardando mensajes en: {self.log_file}")
+            print(f"📁 Saving messages to: {self.log_file}")
             
-            # Iniciar sistema de heartbeats
+            # Start heartbeat system
             if self.heartbeat_system:
-                print("💓 Iniciando sistema de heartbeats...")
-                # Crear tarea para el sistema de heartbeats
+                print("💓 Starting heartbeat system...")
                 asyncio.create_task(self.heartbeat_system.start_heartbeat())
             
             print("-" * 60)
             
-            # Verificar si el servidor existe
+            # Check if target server exists
             target_server = self._get_target_server()
             if target_server:
-                print(f"✅ Servidor encontrado: {target_server.name}")
+                print(f"✅ Server found: {target_server.name}")
                 if hasattr(target_server, 'member_count'):
-                    print(f"👥 Miembros: {target_server.member_count}")
+                    print(f"👥 Members: {target_server.member_count}")
             else:
-                print(f"❌ ¡Servidor no encontrado! Verifica el ID del servidor.")
+                print(f"❌ Server not found! Check the server ID.")
             print("-" * 60)
         
         @self.client.event
         async def on_message(message):
-            # Registrar todos los mensajes que coincidan con los criterios de monitoreo
+            # Log all messages matching monitoring criteria
             if self._should_monitor_message(message):
                 await self._log_message(message)
         
         @self.client.event
         async def on_error(event, *args, **kwargs):
-            print(f"❌ Error en evento {event}: {args}")
+            print(f"❌ Error in event {event}: {args}")
             
-            # Enviar ping de error al sistema de heartbeats
+            # Send error ping to heartbeat system
             if self.heartbeat_system:
-                await self.heartbeat_system.send_ping("fail", f"Error en evento {event}: {str(args)[:100]}")
+                await self.heartbeat_system.send_ping("fail", f"Error in event {event}: {str(args)[:100]}")
         
         @self.client.event
         async def on_disconnect():
-            print("🔌 Bot desconectado")
+            print("🔌 Bot disconnected")
             
-            # Enviar ping de desconexión
+            # Send disconnect ping
             if self.heartbeat_system:
-                await self.heartbeat_system.send_ping("fail", "Bot desconectado de Discord")
+                await self.heartbeat_system.send_ping("fail", "Bot disconnected from Discord")
         
         @self.client.event
         async def on_resumed():
-            print("🔄 Conexión reanudada")
+            print("🔄 Connection resumed")
             
-            # Enviar ping de reconexión
+            # Send reconnect ping
             if self.heartbeat_system:
-                await self.heartbeat_system.send_ping("success", "Conexión reanudada exitosamente")
+                await self.heartbeat_system.send_ping("success", "Connection resumed successfully")
     
     def _should_monitor_message(self, message: discord.Message) -> bool:
-        """Determinar si el mensaje debe ser registrado"""
-        # No registrar mensajes sin guild (DMs) a menos que sea específicamente configurado
+        """Determine if the message should be logged"""
+        # Ignore messages without guild (DMs) unless specifically configured
         if not message.guild:
             return False
             
-        # Verificar si el mensaje es del servidor objetivo
+        # Check if message is from the target server
         if str(message.guild.id) != self.target_server_id:
             return False
         
-        # Si hay canales específicos configurados, verificar si el mensaje es de uno de ellos
+        # If specific channels are configured, check if message is from one of them
         if self.target_channel_ids:
             return str(message.channel.id) in self.target_channel_ids
         
-        # Si no hay canales específicos, monitorear todos los canales del servidor
+        # If no specific channels, monitor all channels in the server
         return True
-
-
-
-
-
     
     def _get_target_server(self) -> Optional[discord.Guild]:
-        """Obtener el servidor objetivo para monitoreo"""
+        """Get the target server for monitoring"""
         if not self.target_server_id or not self.target_server_id.isdigit():
             return None
         return discord.utils.get(self.client.guilds, id=int(self.target_server_id))
-
-
     
     async def _find_message_in_notion(self, message_id: str) -> Optional[str]:
         """
-        Buscar un mensaje en Notion por su ID y retornar la URL de la página de Notion
+        Search for a message in Notion by its ID and return the Notion page URL
         """
         if not self.notion_client or not self.notion_database_id:
             return None
         
         try:
-            # Buscar en la base de datos de Notion usando el ID del mensaje
+            # Search Notion database using message ID
             query_filter = {
                 "property": "Message ID",
                 "title": {
@@ -184,40 +176,39 @@ class SimpleMessageListener:
                 }
             }
             
-            print(f"🔍 Buscando mensaje en Notion: {message_id}")
+            print(f"🔍 Searching message in Notion: {message_id}")
             
-            # Realizar la consulta en un hilo para no bloquear el event loop
+            # Query in a thread to avoid blocking the event loop
             response = await asyncio.to_thread(
                 self.notion_client.databases.query,
                 database_id=self.notion_database_id,
                 filter=query_filter
             )
             
-            # Acceder a los resultados usando indexación directa
-            # Ignorar advertencias del linter - notion-client 2.2.1 devuelve un dict
+            # Access results directly (notion-client 2.2.1 returns a dict)
             results = response['results']  # type: ignore
             
             if results and len(results) > 0:
                 page_id = results[0]['id']
-                # Generar la URL de la página de Notion
+                # Generate Notion page URL
                 page_url = f"https://www.notion.so/{page_id.replace('-', '')}"
-                print(f"✅ Mensaje encontrado en Notion: {page_url}")
+                print(f"✅ Message found in Notion: {page_url}")
                 return page_url
             else:
-                print(f"❌ Mensaje no encontrado en Notion: {message_id}")
+                print(f"❌ Message not found in Notion: {message_id}")
                 return None
             
         except Exception as e:
-            print(f"❌ Error al buscar mensaje en Notion: {e}")
+            print(f"❌ Error searching message in Notion: {e}")
             return None
     
     async def _save_message_to_notion(self, message: discord.Message):
-        """Guardar mensaje en la base de datos de Notion con soporte para respuestas"""
+        """Save message to Notion database with support for replies"""
         if not self.notion_client or not self.notion_database_id:
             return False
         
         try:
-            # Obtener información del mensaje
+            # Get message info
             server_name = message.guild.name if message.guild else 'DM'
             
             try:
@@ -225,22 +216,21 @@ class SimpleMessageListener:
             except:
                 channel_name = 'DM'
             
-            # Obtener nombre del autor
+            # Get author name
             author_name = f"@{message.author.name}"
             
-            content = message.content or '[Sin contenido de texto]'
+            content = message.content or '[No text content]'
             
-            # ID del mensaje de Discord
+            # Discord message ID
             message_id = str(message.id)
             
-            # Verificar si hay archivos adjuntos
+            # Check for attachments
             has_attachment = len(message.attachments) > 0
             
-            # Preparar archivos adjuntos para Notion (solo URLs de los archivos)
+            # Prepare attachments for Notion (only file URLs)
             attachment_files = []
             if has_attachment:
                 for attachment in message.attachments:
-                    # Notion espera objetos de archivo con nombre y URL externa
                     attachment_files.append({
                         "name": attachment.filename,
                         "external": {
@@ -248,31 +238,31 @@ class SimpleMessageListener:
                         }
                     })
             
-            # Verificar si hay URLs en el contenido
+            # Check for URLs in content
             import re
             url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
             urls = re.findall(url_pattern, content)
             has_url = len(urls) > 0
             url_adjunta = urls[0] if urls else ""
             
-            # URL del mensaje original
+            # Original message URL
             message_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}" if message.guild else ""
             
-            # Fecha en formato ISO
+            # ISO formatted date
             fecha_mensaje = message.created_at.isoformat()
             
-            # Verificar si es una respuesta a otro mensaje
+            # Check if message is a reply
             replied_message_notion_url = None
             if message.reference and message.reference.message_id:
                 replied_message_id = str(message.reference.message_id)
                 replied_message_notion_url = await self._find_message_in_notion(replied_message_id)
                 
                 if replied_message_notion_url:
-                    print(f"🔗 Mensaje es respuesta a: {replied_message_id}")
+                    print(f"🔗 Message is a reply to: {replied_message_id}")
                 else:
-                    print(f"⚠️  Mensaje original no encontrado en Notion: {replied_message_id}")
+                    print(f"⚠️  Original message not found in Notion: {replied_message_id}")
             
-            # Crear el objeto de página para Notion
+            # Create Notion page object
             notion_page = {
                 "parent": {"database_id": self.notion_database_id},
                 "properties": {
@@ -313,7 +303,7 @@ class SimpleMessageListener:
                         "rich_text": [
                             {
                                 "text": {
-                                    "content": content[:2000]  # Notion tiene límite de caracteres
+                                    "content": content[:2000]  # Notion character limit
                                 }
                             }
                         ]
@@ -327,133 +317,132 @@ class SimpleMessageListener:
                 }
             }
             
-            # Añadir archivos adjuntos solo si existen
+            # Add attachments if present
             if attachment_files:
                 notion_page["properties"]["Attached File"] = {
                     "files": attachment_files
                 }
             
-            # Añadir URL del mensaje original si es una respuesta
+            # Add original message URL if reply
             if replied_message_notion_url:
                 notion_page["properties"]["Original Message"] = {
                     "url": replied_message_notion_url
                 }
             
-            # Crear la página en Notion en un hilo para no bloquear
+            # Create Notion page in a thread to avoid blocking
             response = await asyncio.to_thread(
                 self.notion_client.pages.create,
                 **notion_page
             )
             
-            reply_info = " (respuesta)" if replied_message_notion_url else ""
-            print(f"✅ Mensaje guardado en Notion: {author_name} en #{channel_name}{reply_info}")
-            return response  # <-- CAMBIO: Retorna el objeto completo
+            reply_info = " (reply)" if replied_message_notion_url else ""
+            print(f"✅ Message saved in Notion: {author_name} in #{channel_name}{reply_info}")
+            return response
             
         except Exception as e:
-            print(f"❌ Error al guardar mensaje en Notion: {e}")
-            return None  # <-- CAMBIO: Retorna None en caso de error
+            print(f"❌ Error saving message in Notion: {e}")
+            return None
         
     async def _log_message(self, message: discord.Message):
-        """Registrar mensaje en Notion y como backup en archivo de texto"""
+        """Log message in Notion and as backup in text file"""
         try:
-            # Intentar guardar en Notion primero
+            # Try saving to Notion first
             notion_success = False
             if self.notion_client:
                 notion_response = await self._save_message_to_notion(message)
                 notion_success = bool(notion_response)
             
-            # Si Notion falla o no está configurado, usar archivo de texto como backup
+            # If Notion fails or is not configured, use text file as backup
             if not notion_success:
                 self._log_message_to_file(message)
                 
         except Exception as e:
-            print(f"❌ Error al registrar mensaje: {e}")
-            # Como último recurso, intentar guardar en archivo
+            print(f"❌ Error logging message: {e}")
+            # As last resort, try saving to file
             try:
                 self._log_message_to_file(message)
             except:
-                print(f"❌ Error crítico: No se pudo guardar el mensaje de ninguna manera")
+                print(f"❌ Critical error: Could not save message by any method")
     
     def _log_message_to_file(self, message: discord.Message):
-        """Registrar mensaje en el archivo de texto (método de backup)"""
+        """Log message to text file (backup method)"""
         try:
             timestamp = datetime.datetime.now().isoformat()
             
-            # Obtener nombre del servidor y canal
+            # Get server and channel name
             server_name = message.guild.name if message.guild else 'DM'
             
-            # Obtener nombre del canal de forma segura
             try:
                 channel_name = getattr(message.channel, 'name', 'DM')
             except:
                 channel_name = 'DM'
             
-            # Obtener nombre del autor
+            # Get author name
             author_name = f"@{message.author.name}"
             
-            content = message.content or '[Sin contenido de texto]'
+            content = message.content or '[No text content]'
             
-            # Información sobre archivos adjuntos
+            # Attachment info
             attachments_info = ""
             if message.attachments:
-                attachments_info = f" [Archivos: {len(message.attachments)}]"
+                attachments_info = f" [Attachments: {len(message.attachments)}]"
             
-            # Información sobre embeds
+            # Embed info
             embeds_info = ""
             if message.embeds:
                 embeds_info = f" [Embeds: {len(message.embeds)}]"
             
-            # Formato del log (similar al formato actual que tienes)
+            # Log format
             log_entry = f"[{timestamp}] {server_name} > #{channel_name} | {author_name}: {content}{attachments_info}{embeds_info}\n"
             log_separator = "-" * 80 + "\n"
             
-            # Escribir al archivo
+            # Write to file
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(log_entry)
                 f.write(log_separator)
             
-            # Mostrar en consola
+            # Show in console
             print(f"📝 [BACKUP FILE] [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}")
             
         except Exception as e:
-            print(f"❌ Error al registrar mensaje en archivo: {e}")
+            print(f"❌ Error logging message to file: {e}")
     
     def validate_config(self) -> bool:
-        """Validar configuración del bot"""
+        """Validate bot configuration"""
         if not self.token:
-            print("❌ Token de Discord no encontrado. Configura DISCORD_TOKEN en el archivo .env")
+            print("❌ Discord token not found. Set DISCORD_TOKEN in the .env file")
             return False
         
         if not self.target_server_id:
-            print("❌ ID del servidor no configurado. Configura MONITORING_SERVER_ID en el archivo .env")
+            print("❌ Server ID not configured. Set MONITORING_SERVER_ID in the .env file")
             return False
         
-        # Validar configuración de Notion (opcional pero recomendada)
+        # Notion configuration validation (optional but recommended)
         if not self.notion_token or not self.notion_database_id:
-            print("⚠️  Configuración de Notion no encontrada. Los mensajes se guardarán solo en archivo de texto.")
-            print("   Para usar Notion, configura NOTION_TOKEN y NOTION_DATABASE_ID en el archivo .env")
+            print("⚠️  Notion configuration not found. Messages will be saved only to text file.")
+            print("   To use Notion, set NOTION_TOKEN and NOTION_DATABASE_ID in the .env file")
         else:
-            print("✅ Configuración de Notion encontrada. Los mensajes se guardarán en Notion.")
+            print("✅ Notion configuration found. Messages will be saved in Notion.")
         
-        # Validar configuración de heartbeats
+        # Heartbeat configuration validation
         if not self.heartbeat_url:
-            print("⚠️  URL de heartbeats no configurada. Configura HEALTHCHECKS_PING_URL en el archivo .env")
+            print("⚠️  Heartbeat URL not configured. Set HEALTHCHECKS_PING_URL in the .env file")
         else:
-            print(f"✅ Sistema de heartbeats configurado: {self.heartbeat_url[:50]}...")
+            print(f"✅ Heartbeat system configured: {self.heartbeat_url[:50]}...")
         
         return True
     
     def run(self):
-        """Iniciar el bot"""
+        """Start the bot"""
         if not self.validate_config():
             return
         
-        print("🚀 Iniciando Discord Message Listener...")
-        print("📋 Configuración:")
-        print(f"   - Servidor: {self.target_server_id}")
-        print(f"   - Canales: {'Específicos' if self.target_channel_ids else 'Todos'}")
-        print(f"   - Notion: {'✅ Configurado' if self.notion_client else '❌ No configurado'}")
-        print(f"   - Heartbeats: {'✅ Configurado' if self.heartbeat_system else '❌ No configurado'}")
+        print("🚀 Starting Discord Message Listener...")
+        print("📋 Configuration:")
+        print(f"   - Server: {self.target_server_id}")
+        print(f"   - Channels: {'Specific' if self.target_channel_ids else 'All'}")
+        print(f"   - Notion: {'✅ Configured' if self.notion_client else '❌ Not configured'}")
+        print(f"   - Heartbeats: {'✅ Configured' if self.heartbeat_system else '❌ Not configured'}")
         print(f"   - Backup file: {self.log_file}")
         print("-" * 60)
         
@@ -461,38 +450,37 @@ class SimpleMessageListener:
             if self.token:
                 self.client.run(self.token)
             else:
-                print("❌ Token no válido")
+                print("❌ Invalid token")
         except KeyboardInterrupt:
-            print("\n⏹️ Deteniendo bot...")
-            # Detener sistema de heartbeats
+            print("\n⏹️ Stopping bot...")
+            # Stop heartbeat system
             if self.heartbeat_system:
                 asyncio.run(self.heartbeat_system.stop_heartbeat())
         except Exception as error:
-            print(f"❌ Error al iniciar el bot: {error}")
+            print(f"❌ Error starting bot: {error}")
             if "Improper token" in str(error):
-                print("🔑 Asegúrate de usar un token de Discord válido")
+                print("🔑 Make sure to use a valid Discord token")
             
-            # Enviar ping de error crítico
+            # Send critical error ping
             if self.heartbeat_system:
-                asyncio.run(self.heartbeat_system.send_ping("fail", f"Error crítico: {str(error)[:100]}"))
+                asyncio.run(self.heartbeat_system.send_ping("fail", f"Critical error: {str(error)[:100]}"))
     
     async def get_heartbeat_status(self) -> dict:
-        """Obtener estado del sistema de heartbeats"""
+        """Get heartbeat system status"""
         if not self.heartbeat_system:
             return {"status": "not_configured"}
         
         return self.heartbeat_system.get_status()
     
-    async def send_manual_heartbeat(self, message: str = "Ping manual desde bot"):
-        """Enviar heartbeat manual"""
+    async def send_manual_heartbeat(self, message: str = "Manual ping from bot"):
+        """Send manual heartbeat"""
         if not self.heartbeat_system:
             return False
         
         return await self.heartbeat_system.send_manual_ping(message)
 
-
 def main():
-    """Punto de entrada principal"""
+    """Main entry point"""
     listener = SimpleMessageListener()
     listener.run()
 
