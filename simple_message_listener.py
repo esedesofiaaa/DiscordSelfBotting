@@ -1,13 +1,10 @@
-"""
-Discord Message Listener - Simple Version with Notion integration
-A bot that listens and logs all messages from a specific server or channel.
-Saves information directly to a Notion database.
-Includes heartbeat monitoring system with Healthchecks.io.
-"""
 import discord
 import os
 import datetime
 import asyncio
+import aiohttp
+import tempfile
+import mimetypes
 from typing import Optional, List
 from dotenv import load_dotenv
 from notion_client import Client
@@ -25,7 +22,7 @@ class SimpleMessageListener:
         self.token = os.getenv('DISCORD_TOKEN')
         self.target_server_id = os.getenv('MONITORING_SERVER_ID')
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
-        self.log_file = os.getenv('LOG_FILE', './logs/messages.txt')
+        self.log_file = os.getenv('LOG_FILE', './logs/messages.json')
         
         # Notion configuration
         self.notion_token = os.getenv('NOTION_TOKEN')
@@ -202,6 +199,77 @@ class SimpleMessageListener:
             print(f"❌ Error searching message in Notion: {e}")
             return None
     
+    async def _process_attachment_with_tempfile(self, attachment: discord.Attachment) -> Optional[dict]:
+        """
+        Process Discord attachment using temporary files
+        Returns file info for Notion or None if failed
+        """
+        try:
+            print(f"📥 Processing attachment: {attachment.filename}")
+            
+            # Create safe filename for extension detection
+            safe_filename = "".join(c for c in attachment.filename if c.isalnum() or c in (' ', '.', '_', '-')).rstrip()
+            
+            # Get file extension
+            _, ext = os.path.splitext(attachment.filename)
+            if not ext:
+                ext = '.tmp'
+            
+            # Download file from Discord using temporary file
+            async with aiohttp.ClientSession() as session:
+                async with session.get(attachment.url) as response:
+                    if response.status == 200:
+                        # Use temporary file that will be automatically deleted
+                        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+                            temp_path = temp_file.name
+                            
+                            # Download to temporary file
+                            async for chunk in response.content.iter_chunked(8192):
+                                temp_file.write(chunk)
+                        
+                        print(f"✅ Attachment downloaded to temporary file: {attachment.filename}")
+                        
+                        # Get file info using async file operations
+                        def _get_file_size():
+                            return os.path.getsize(temp_path)
+                        
+                        file_size = await asyncio.to_thread(_get_file_size)
+                        mime_type, _ = mimetypes.guess_type(attachment.filename)
+                        
+                        file_info = {
+                            "filename": attachment.filename,
+                            "safe_filename": safe_filename,
+                            "original_url": attachment.url,
+                            "temp_path": temp_path,
+                            "size": file_size,
+                            "discord_size": attachment.size,
+                            "mime_type": mime_type or 'application/octet-stream',
+                            "width": getattr(attachment, 'width', None),
+                            "height": getattr(attachment, 'height', None)
+                        }
+                        
+                        # Clean up temporary file immediately after getting info - Async operation
+                        def _cleanup_tempfile():
+                            try:
+                                os.unlink(temp_path)
+                                return True
+                            except OSError as e:
+                                print(f"⚠️ Could not delete temporary file: {temp_path} - {e}")
+                                return False
+                        
+                        cleanup_success = await asyncio.to_thread(_cleanup_tempfile)
+                        if cleanup_success:
+                            print(f"🧹 Temporary file cleaned up: {attachment.filename}")
+                        
+                        return file_info
+                    else:
+                        print(f"❌ Failed to download attachment: HTTP {response.status}")
+                        return None
+                        
+        except Exception as e:
+            print(f"❌ Error processing attachment {attachment.filename}: {e}")
+            return None
+    
     async def _save_message_to_notion(self, message: discord.Message):
         """Save message to Notion database with support for replies"""
         if not self.notion_client or not self.notion_database_id:
@@ -224,19 +292,37 @@ class SimpleMessageListener:
             # Discord message ID
             message_id = str(message.id)
             
-            # Check for attachments
+            # Check for attachments and process them
             has_attachment = len(message.attachments) > 0
             
-            # Prepare attachments for Notion (only file URLs)
+            # Process attachments - using temporary files
             attachment_files = []
+            
             if has_attachment:
                 for attachment in message.attachments:
-                    attachment_files.append({
-                        "name": attachment.filename,
-                        "external": {
-                            "url": attachment.url
-                        }
-                    })
+                    # Try to process the attachment using temporary files
+                    file_info = await self._process_attachment_with_tempfile(attachment)
+                    
+                    if file_info:
+                        # Successfully processed with temporary file
+                        print(f"✅ Attachment processed: {file_info['filename']}")
+                        
+                        # Create Notion file object with external URL (more reliable)
+                        attachment_files.append({
+                            "name": file_info['filename'],
+                            "external": {
+                                "url": file_info['original_url']
+                            }
+                        })
+                    else:
+                        # Fall back to just external URL if processing fails
+                        print(f"⚠️  Could not process attachment, using external URL only: {attachment.filename}")
+                        attachment_files.append({
+                            "name": attachment.filename,
+                            "external": {
+                                "url": attachment.url
+                            }
+                        })
             
             # Check for URLs in content
             import re
@@ -354,22 +440,22 @@ class SimpleMessageListener:
             
             # If Notion fails or is not configured, use text file as backup
             if not notion_success:
-                self._log_message_to_file(message)
+                await self._log_message_to_file(message)
                 
         except Exception as e:
             print(f"❌ Error logging message: {e}")
             # As last resort, try saving to file
             try:
-                self._log_message_to_file(message)
+                await self._log_message_to_file(message)
             except:
                 print(f"❌ Critical error: Could not save message by any method")
     
-    def _log_message_to_file(self, message: discord.Message):
-        """Log message to text file (backup method)"""
+    async def _log_message_to_file(self, message: discord.Message):
+        """Log message to JSON file (backup method) - Asynchronous version"""
         try:
-            timestamp = datetime.datetime.now().isoformat()
+            import json
             
-            # Get server and channel name
+            # Get message info
             server_name = message.guild.name if message.guild else 'DM'
             
             try:
@@ -382,30 +468,100 @@ class SimpleMessageListener:
             
             content = message.content or '[No text content]'
             
-            # Attachment info
-            attachments_info = ""
+            # Discord message ID
+            message_id = str(message.id)
+            
+            # Check for URLs in content
+            import re
+            url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+            urls = re.findall(url_pattern, content)
+            has_url = len(urls) > 0
+            url_adjunta = urls[0] if urls else None
+            
+            # Original message URL
+            message_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}" if message.guild else None
+            
+            # ISO formatted date
+            fecha_mensaje = message.created_at.isoformat()
+            
+            # Process attachments
+            attached_files = []
             if message.attachments:
-                attachments_info = f" [Attachments: {len(message.attachments)}]"
+                for attachment in message.attachments:
+                    attached_files.append({
+                        "name": attachment.filename,
+                        "url": attachment.url,
+                        "size": attachment.size,
+                        "width": getattr(attachment, 'width', None),
+                        "height": getattr(attachment, 'height', None)
+                    })
             
-            # Embed info
-            embeds_info = ""
-            if message.embeds:
-                embeds_info = f" [Embeds: {len(message.embeds)}]"
+            # Check if message is a reply
+            original_message_id = None
+            if message.reference and message.reference.message_id:
+                original_message_id = str(message.reference.message_id)
             
-            # Log format
-            log_entry = f"[{timestamp}] {server_name} > #{channel_name} | {author_name}: {content}{attachments_info}{embeds_info}\n"
-            log_separator = "-" * 80 + "\n"
+            # Create JSON structure matching Notion fields
+            message_data = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "message_id": message_id,
+                "author": author_name,
+                "date": fecha_mensaje,
+                "server": server_name,
+                "channel": channel_name,
+                "content": content,
+                "attached_url": url_adjunta,
+                "message_url": message_url,
+                "attached_files": attached_files if attached_files else None,
+                "original_message_id": original_message_id,
+                "has_embeds": len(message.embeds) > 0,
+                "embed_count": len(message.embeds) if message.embeds else 0
+            }
             
-            # Write to file
-            with open(self.log_file, 'a', encoding='utf-8') as f:
-                f.write(log_entry)
-                f.write(log_separator)
+            # Change log file extension to .json
+            json_log_file = self.log_file.replace('.txt', '.json')
+            
+            # Define async function for file operations
+            def _read_write_json_file():
+                # Read existing data or create new list
+                try:
+                    with open(json_log_file, 'r', encoding='utf-8') as f:
+                        existing_data = json.load(f)
+                        if not isinstance(existing_data, list):
+                            existing_data = []
+                except (FileNotFoundError, json.JSONDecodeError):
+                    existing_data = []
+                
+                # Append new message
+                existing_data.append(message_data)
+                
+                # Write back to file
+                with open(json_log_file, 'w', encoding='utf-8') as f:
+                    json.dump(existing_data, f, indent=2, ensure_ascii=False)
+                
+                return True
+            
+            # Execute file operations in a separate thread
+            await asyncio.to_thread(_read_write_json_file)
             
             # Show in console
-            print(f"📝 [BACKUP FILE] [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}")
+            print(f"📝 [BACKUP JSON] [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}")
             
         except Exception as e:
-            print(f"❌ Error logging message to file: {e}")
+            print(f"❌ Error logging message to JSON file: {e}")
+            # Fallback to old text format if JSON fails
+            try:
+                timestamp = datetime.datetime.now().isoformat()
+                log_entry = f"[{timestamp}] ERROR LOGGING JSON - {server_name} > #{channel_name} | {author_name}: {content}\n"
+                
+                # Async fallback write operation
+                def _write_fallback():
+                    with open(self.log_file, 'a', encoding='utf-8') as f:
+                        f.write(log_entry)
+                
+                await asyncio.to_thread(_write_fallback)
+            except:
+                print(f"❌ Critical error: Could not save message by any method")
     
     def validate_config(self) -> bool:
         """Validate bot configuration"""
@@ -486,3 +642,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
