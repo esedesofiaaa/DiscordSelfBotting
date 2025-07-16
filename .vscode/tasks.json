@@ -8,6 +8,24 @@
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Process Discord Messages (One Time)",
+			"type": "shell",
+			"command": "./run_one_time.sh",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": [],
+			"detail": "Procesa todos los mensajes desde el 1 de julio hasta la fecha actual y se cierra automáticamente"
+		},
+		{
+			"label": "Setup Environment",
+			"type": "shell",
+			"command": "./setup.sh",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": [],
+			"detail": "Configura el entorno virtual e instala dependencias"
 		}
 	]
 }

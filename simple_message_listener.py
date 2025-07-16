@@ -5,6 +5,8 @@ import asyncio
 import aiohttp
 import tempfile
 import mimetypes
+import json
+import re
 from typing import Optional, List
 from dotenv import load_dotenv
 from notion_client import Client
@@ -15,7 +17,7 @@ load_dotenv()
 
 
 class SimpleMessageListener:
-    """Simple bot to listen and log Discord messages"""
+    """Bot to read and upload all Discord messages from July 1st to current date"""
     
     def __init__(self):
         # Basic configuration
@@ -23,6 +25,15 @@ class SimpleMessageListener:
         self.target_server_id = os.getenv('MONITORING_SERVER_ID')
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
         self.log_file = os.getenv('LOG_FILE', './logs/messages.json')
+        
+        # Date range configuration
+        self.start_date = datetime.datetime(2025, 7, 1, tzinfo=datetime.timezone.utc)
+        self.end_date = datetime.datetime.now(datetime.timezone.utc)
+        
+        # Processing control
+        self.processed_messages = 0
+        self.failed_messages = 0
+        self.is_processing = False
         
         # Notion configuration
         self.notion_token = os.getenv('NOTION_TOKEN')
@@ -83,9 +94,10 @@ class SimpleMessageListener:
             if self.target_channel_ids:
                 print(f"📋 Specific channels: {', '.join(self.target_channel_ids)}")
             else:
-                print("📋 Monitoring ALL channels in the server")
+                print("📋 Processing ALL channels in the server")
             
             print(f"📁 Saving messages to: {self.log_file}")
+            print(f"📅 Date range: {self.start_date.date()} to {self.end_date.date()}")
             
             # Start heartbeat system
             if self.heartbeat_system:
@@ -100,15 +112,14 @@ class SimpleMessageListener:
                 print(f"✅ Server found: {target_server.name}")
                 if hasattr(target_server, 'member_count'):
                     print(f"👥 Members: {target_server.member_count}")
+                print("-" * 60)
+                
+                # Start message processing
+                await self._process_all_messages()
             else:
                 print(f"❌ Server not found! Check the server ID.")
-            print("-" * 60)
-        
-        @self.client.event
-        async def on_message(message):
-            # Log all messages matching monitoring criteria
-            if self._should_monitor_message(message):
-                await self._log_message(message)
+                print("-" * 60)
+                await self.client.close()
         
         @self.client.event
         async def on_error(event, *args, **kwargs):
@@ -156,6 +167,117 @@ class SimpleMessageListener:
         if not self.target_server_id or not self.target_server_id.isdigit():
             return None
         return discord.utils.get(self.client.guilds, id=int(self.target_server_id))
+    
+    async def _process_all_messages(self):
+        """Process all messages from the specified date range"""
+        if self.is_processing:
+            print("⚠️ Processing already in progress")
+            return
+        
+        self.is_processing = True
+        self.processed_messages = 0
+        self.failed_messages = 0
+        
+        try:
+            target_server = self._get_target_server()
+            if not target_server:
+                print("❌ Target server not found")
+                return
+            
+            print(f"🔍 Starting to process messages from {self.start_date.date()} to {self.end_date.date()}")
+            
+            # Get channels to process
+            channels_to_process = []
+            
+            if self.target_channel_ids:
+                # Process specific channels
+                for channel_id in self.target_channel_ids:
+                    try:
+                        channel = target_server.get_channel(int(channel_id))
+                        if channel and isinstance(channel, discord.TextChannel):
+                            channels_to_process.append(channel)
+                        else:
+                            print(f"⚠️ Channel not found or not a text channel: {channel_id}")
+                    except ValueError:
+                        print(f"⚠️ Invalid channel ID: {channel_id}")
+            else:
+                # Process all text channels
+                channels_to_process = [ch for ch in target_server.channels if isinstance(ch, discord.TextChannel)]
+            
+            print(f"📋 Found {len(channels_to_process)} channels to process")
+            
+            for channel in channels_to_process:
+                await self._process_channel_messages(channel)
+                
+                # Send progress heartbeat
+                if self.heartbeat_system:
+                    progress_msg = f"Processed {self.processed_messages} messages, failed: {self.failed_messages}"
+                    await self.heartbeat_system.send_ping("success", progress_msg)
+            
+            # Final summary
+            print("-" * 60)
+            print(f"✅ Processing completed!")
+            print(f"📊 Total messages processed: {self.processed_messages}")
+            print(f"❌ Failed messages: {self.failed_messages}")
+            print(f"💾 Messages saved to: {self.log_file}")
+            
+            # Send completion heartbeat
+            if self.heartbeat_system:
+                completion_msg = f"Processing completed. Total: {self.processed_messages}, Failed: {self.failed_messages}"
+                await self.heartbeat_system.send_ping("success", completion_msg)
+            
+            print("-" * 60)
+            print("🏁 Bot will close in 5 seconds...")
+            await asyncio.sleep(5)
+            await self.client.close()
+            
+        except Exception as e:
+            print(f"❌ Error during message processing: {e}")
+            
+            # Send error heartbeat
+            if self.heartbeat_system:
+                await self.heartbeat_system.send_ping("fail", f"Processing error: {str(e)[:100]}")
+            
+        finally:
+            self.is_processing = False
+    
+    async def _process_channel_messages(self, channel: discord.TextChannel):
+        """Process all messages in a specific channel within the date range"""
+        try:
+            print(f"📝 Processing channel: #{channel.name}")
+            
+            channel_message_count = 0
+            
+            # Get messages in the date range using Discord's history
+            async for message in channel.history(
+                limit=None,
+                after=self.start_date,
+                before=self.end_date,
+                oldest_first=True
+            ):
+                try:
+                    # Process the message
+                    await self._log_message(message)
+                    self.processed_messages += 1
+                    channel_message_count += 1
+                    
+                    # Show progress every 50 messages
+                    if self.processed_messages % 50 == 0:
+                        print(f"📊 Progress: {self.processed_messages} messages processed...")
+                    
+                    # Small delay to avoid rate limits
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    print(f"❌ Error processing message {message.id}: {e}")
+                    self.failed_messages += 1
+            
+            print(f"✅ Channel #{channel.name} completed: {channel_message_count} messages")
+            
+        except discord.Forbidden:
+            print(f"❌ No access to channel #{channel.name}")
+        except Exception as e:
+            print(f"❌ Error processing channel #{channel.name}: {e}")
     
     async def _find_message_in_notion(self, message_id: str) -> Optional[str]:
         """
