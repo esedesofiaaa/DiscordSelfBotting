@@ -132,7 +132,8 @@ class SimpleMessageListener:
         
         # Heartbeat configuration
         self.heartbeat_url = os.getenv('HEALTHCHECKS_PING_URL', 'https://hc-ping.com/f679a27c-8a41-4ae2-9504-78f1b260e71d')
-        self.heartbeat_interval = int(os.getenv('HEARTBEAT_INTERVAL', '300'))  # Default: 5 minutes
+        heartbeat_val = os.getenv('HEARTBEAT_INTERVAL') or '300'
+        self.heartbeat_interval = int(heartbeat_val)
         self.heartbeat_system = None
         
         # Google Drive configuration
