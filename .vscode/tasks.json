@@ -8,6 +8,15 @@
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Setup Environment",
+			"type": "shell",
+			"command": "./setup.sh",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": [],
+			"detail": "Configura el entorno virtual e instala dependencias"
 		}
 	]
 }

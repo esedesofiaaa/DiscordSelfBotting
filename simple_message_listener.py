@@ -5,17 +5,113 @@ import asyncio
 import aiohttp
 import tempfile
 import mimetypes
+import json
+import re
+import random
+import requests
 from typing import Optional, List
 from dotenv import load_dotenv
 from notion_client import Client
 from heartbeat_system import HeartbeatSystem
+from google_drive_manager import GoogleDriveManager
+
+# Import the quickUpload function for official Notion file uploads
+def quickUpload(filePath: str, pageId: str, notionToken: str) -> Optional[dict]:
+    """
+    Official Notion file upload function using the Direct Upload API (3-step process).
+    
+    Args:
+        filePath: Path to the local file to upload
+        pageId: ID of the Notion page where the file will be attached (unused in upload step)
+        notionToken: Notion API token
+    
+    Returns:
+        Dict with file upload ID for Notion properties if successful, None if failed
+    """
+    import requests
+    import os
+    
+    try:
+        filename = os.path.basename(filePath)
+        
+        headers = {
+            'Authorization': f'Bearer {notionToken}',
+            'Notion-Version': '2022-06-28'
+        }
+        
+        # Step 1: Create a file upload object (empty body)
+        print(f"📁 Step 1: Creating file upload object for {filename}...")
+        response = requests.post(
+            'https://api.notion.com/v1/file_uploads',
+            headers={**headers, 'Content-Type': 'application/json'},
+            json={}  # Empty body as per official docs
+        )
+        
+        if response.status_code != 200:
+            print(f"❌ Failed to create file upload: {response.status_code} - {response.text}")
+            return None
+        
+        upload_data = response.json()
+        upload_id = upload_data.get('id')
+        upload_url = upload_data.get('upload_url')
+        
+        if not upload_id or not upload_url:
+            print("❌ No upload ID or upload URL in response")
+            return None
+        
+        print(f"✅ File upload object created with ID: {upload_id}")
+        
+        # Step 2: Upload file content using multipart/form-data
+        print(f"📁 Step 2: Uploading file content...")
+        with open(filePath, 'rb') as f:
+            files = {'file': (filename, f, mimetypes.guess_type(filename)[0] or 'application/octet-stream')}
+            
+            # Note: Don't set Content-Type header, let requests handle multipart boundary
+            upload_response = requests.post(
+                upload_url,  # This should be something like /v1/file_uploads/{id}/send
+                headers={k: v for k, v in headers.items() if k != 'Content-Type'},  # Remove Content-Type
+                files=files
+            )
+        
+        if upload_response.status_code not in [200, 201]:
+            print(f"❌ File upload failed: {upload_response.status_code} - {upload_response.text}")
+            return None
+        
+        upload_result = upload_response.json()
+        print(f"✅ File uploaded successfully: {filename}")
+        
+        # Step 3: Return file upload object for Notion properties
+        # The file can now be attached using the upload_id
+        file_info = {
+            "type": "file_upload",
+            "file_upload": {
+                "id": upload_id
+            },
+            "name": filename
+        }
+        
+        print(f"✅ File ready for attachment with ID: {upload_id}")
+        return file_info
+        
+    except Exception as e:
+        print(f"❌ Error in quickUpload: {e}")
+        return None
 
 # Load environment variables
 load_dotenv()
 
 
 class SimpleMessageListener:
-    """Simple bot to listen and log Discord messages"""
+    """
+    Bot to monitor and log new Discord messages in real-time
+    
+    Features:
+    - Listens for new messages and processes them instantly
+    - Uploads files to Notion using official quickUpload function (3-step API process)
+    - Supports Google Drive integration for file backup
+    - Handles images and files with direct Notion upload
+    - Rate limiting and retry logic for robust operation
+    """
     
     def __init__(self):
         # Basic configuration
@@ -23,6 +119,11 @@ class SimpleMessageListener:
         self.target_server_id = os.getenv('MONITORING_SERVER_ID')
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
         self.log_file = os.getenv('LOG_FILE', './logs/messages.json')
+        
+        # Real-time monitoring control
+        self.processed_messages = 0
+        self.failed_messages = 0
+        self.is_monitoring = False
         
         # Notion configuration
         self.notion_token = os.getenv('NOTION_TOKEN')
@@ -33,6 +134,13 @@ class SimpleMessageListener:
         self.heartbeat_url = os.getenv('HEALTHCHECKS_PING_URL', 'https://hc-ping.com/f679a27c-8a41-4ae2-9504-78f1b260e71d')
         self.heartbeat_interval = int(os.getenv('HEARTBEAT_INTERVAL', '300'))  # Default: 5 minutes
         self.heartbeat_system = None
+        
+        # Google Drive configuration
+        self.google_drive_enabled = os.getenv('GOOGLE_DRIVE_ENABLED', 'false').lower() == 'true'
+        self.google_drive_credentials = os.getenv('GOOGLE_DRIVE_CREDENTIALS', 'credentials.json')
+        self.google_drive_token = os.getenv('GOOGLE_DRIVE_TOKEN', 'token.json')
+        self.google_drive_folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID', None)  # Specific folder ID
+        self.google_drive_manager = None
         
         # Initialize heartbeat system
         if self.heartbeat_url:
@@ -47,6 +155,19 @@ class SimpleMessageListener:
             except Exception as e:
                 print(f"❌ Error initializing Notion: {e}")
                 self.notion_client = None
+        
+        # Initialize Google Drive manager if enabled
+        if self.google_drive_enabled:
+            try:
+                self.google_drive_manager = GoogleDriveManager(
+                    credentials_path=self.google_drive_credentials,
+                    token_path=self.google_drive_token,
+                    target_folder_id=self.google_drive_folder_id  # Pass specific folder ID
+                )
+                print("✅ Google Drive manager created")
+            except Exception as e:
+                print(f"❌ Error creating Google Drive manager: {e}")
+                self.google_drive_manager = None
         
         # Discord client (self-bot)
         self.client = discord.Client()
@@ -86,11 +207,22 @@ class SimpleMessageListener:
                 print("📋 Monitoring ALL channels in the server")
             
             print(f"📁 Saving messages to: {self.log_file}")
+            print("🎯 Real-time monitoring mode: Listening for new messages...")
             
             # Start heartbeat system
             if self.heartbeat_system:
                 print("💓 Starting heartbeat system...")
                 asyncio.create_task(self.heartbeat_system.start_heartbeat())
+            
+            # Initialize Google Drive if enabled
+            if self.google_drive_manager:
+                print("☁️ Initializing Google Drive...")
+                drive_success = await self.google_drive_manager.initialize()
+                if drive_success:
+                    print("✅ Google Drive initialized successfully")
+                else:
+                    print("❌ Google Drive initialization failed")
+                    self.google_drive_manager = None
             
             print("-" * 60)
             
@@ -100,15 +232,23 @@ class SimpleMessageListener:
                 print(f"✅ Server found: {target_server.name}")
                 if hasattr(target_server, 'member_count'):
                     print(f"👥 Members: {target_server.member_count}")
+                print("-" * 60)
+                
+                # Start real-time monitoring
+                self.is_monitoring = True
+                print("🎯 Bot is now monitoring for new messages...")
+                print("💡 The bot will now process ALL NEW MESSAGES in real-time (INCLUDING OWN MESSAGES)")
+                print("⚠️  WARNING: Self-monitoring is enabled - be careful with automated responses!")
+                print("💡 To stop the bot, press Ctrl+C")
+                print("-" * 60)
+                
+                # Send startup heartbeat
+                if self.heartbeat_system:
+                    await self.heartbeat_system.send_ping("success", "Bot started successfully - monitoring new messages")
             else:
                 print(f"❌ Server not found! Check the server ID.")
-            print("-" * 60)
-        
-        @self.client.event
-        async def on_message(message):
-            # Log all messages matching monitoring criteria
-            if self._should_monitor_message(message):
-                await self._log_message(message)
+                print("-" * 60)
+                await self.client.close()
         
         @self.client.event
         async def on_error(event, *args, **kwargs):
@@ -133,6 +273,63 @@ class SimpleMessageListener:
             # Send reconnect ping
             if self.heartbeat_system:
                 await self.heartbeat_system.send_ping("success", "Connection resumed successfully")
+        
+        @self.client.event
+        async def on_message(message: discord.Message):
+            """Handle new messages in real-time"""
+            # Skip if not monitoring yet
+            if not self.is_monitoring:
+                return
+            
+            # Note: Removed self-message filtering - now monitors ALL messages including own
+            
+            # Check if we should monitor this message
+            if not self._should_monitor_message(message):
+                return
+            
+            try:
+                print(f"📨 New message from @{message.author.name} in #{getattr(message.channel, 'name', 'DM')}")
+                
+                # Process the message with retry logic for rate limits
+                max_retries = 3
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        await self._log_message(message)
+                        break  # Success, exit retry loop
+                    except Exception as msg_error:
+                        # Check if it's a rate limit error
+                        if await self._handle_rate_limit_error(msg_error, attempt):
+                            if attempt < max_retries:
+                                print(f"🔄 Retrying message processing (attempt {attempt + 1}/{max_retries})")
+                                continue
+                            else:
+                                print(f"❌ Max retries reached for message {message.id}")
+                                raise msg_error
+                        else:
+                            # Not a rate limit error, re-raise immediately
+                            raise msg_error
+                
+                self.processed_messages += 1
+                
+                # Show progress every 10 messages (less frequent for real-time)
+                if self.processed_messages % 10 == 0:
+                    print(f"📊 Progress: {self.processed_messages} messages processed...")
+                
+                # Send progress heartbeat every 50 messages
+                if self.heartbeat_system and self.processed_messages % 50 == 0:
+                    progress_msg = f"Processed {self.processed_messages} messages, failed: {self.failed_messages}"
+                    await self.heartbeat_system.send_ping("success", progress_msg)
+                
+                # Smaller delay for real-time processing (to prevent rate limiting)
+                await asyncio.sleep(0.2)  # 200ms delay between message processing
+                
+            except Exception as e:
+                print(f"❌ Error processing message {message.id}: {e}")
+                self.failed_messages += 1
+                
+                # Send error heartbeat for critical failures
+                if self.heartbeat_system:
+                    await self.heartbeat_system.send_ping("fail", f"Message processing error: {str(e)[:100]}")
     
     def _should_monitor_message(self, message: discord.Message) -> bool:
         """Determine if the message should be logged"""
@@ -157,6 +354,175 @@ class SimpleMessageListener:
             return None
         return discord.utils.get(self.client.guilds, id=int(self.target_server_id))
     
+    async def _handle_rate_limit_error(self, error: Exception, attempt: int = 1):
+        """
+        Handle rate limiting errors with exponential backoff
+        """
+        if "429" in str(error) or "Too Many Requests" in str(error):
+            # Exponential backoff: 2^attempt seconds
+            backoff_delay = min(2 ** attempt, 60)  # Max 60 seconds
+            print(f"⚠️ Rate limit hit! Backing off for {backoff_delay} seconds (attempt {attempt})")
+            
+            # Send rate limit warning to heartbeat
+            if self.heartbeat_system:
+                await self.heartbeat_system.send_ping("fail", f"Rate limit hit, backing off {backoff_delay}s")
+            
+            await asyncio.sleep(backoff_delay)
+            return True
+        return False
+
+    async def _smart_delay(self, message_count: int):
+        """
+        Intelligent delay system to prevent rate limiting
+        Adapts delay based on processing volume and adds randomization
+        """
+        base_delay = 0.5  # 2 requests/second base (much safer than 0.1s)
+        
+        if message_count % 100 == 0:
+            # Longer pause every 100 messages for cooling down
+            delay = base_delay * 2
+            print(f"🛑 Extended cooling period (100 messages): {delay}s")
+            await asyncio.sleep(delay)
+        elif message_count % 50 == 0:
+            # Medium pause every 50 messages
+            delay = base_delay * 1.5
+            print(f"⏸️ Medium pause (50 messages): {delay}s")
+            await asyncio.sleep(delay)
+        else:
+            # Regular delay with randomization to avoid patterns
+            random_offset = random.uniform(0, 0.3)
+            delay = base_delay + random_offset
+            await asyncio.sleep(delay)
+
+    async def _upload_file_to_notion_official(self, temp_path: str, filename: str, message_id: str) -> Optional[dict]:
+        """
+        Upload file directly to Notion using the official quickUpload function
+        Returns file object that can be used in Notion properties
+        """
+        try:
+            print(f"📁 Uploading {filename} directly to Notion via official API...")
+            
+            if not self.notion_token:
+                print("❌ No Notion token available")
+                return None
+            
+            # Use the official 3-step API process
+            return await self._upload_file_direct_to_notion(temp_path, filename, message_id)
+                        
+        except Exception as e:
+            print(f"❌ Error uploading {filename} to Notion: {e}")
+            return None
+
+    async def _upload_file_to_existing_page(self, temp_path: str, filename: str, page_id: str) -> Optional[dict]:
+        """
+        Upload file to an existing Notion page using the quickUpload function
+        """
+        try:
+            if not self.notion_token:
+                print("❌ No Notion token available")
+                return None
+            
+            print(f"📁 Uploading {filename} to existing Notion page via quickUpload...")
+            
+            # Use quickUpload function in a thread to avoid blocking
+            def _upload_sync():
+                # Type assertion since we've already checked that notion_token is not None
+                notion_token: str = self.notion_token  # type: ignore
+                return quickUpload(temp_path, page_id, notion_token)
+            
+            result = await asyncio.to_thread(_upload_sync)
+            
+            if result:
+                print(f"✅ File uploaded to existing page successfully: {filename}")
+            else:
+                print(f"❌ Failed to upload {filename} to existing page")
+            
+            return result
+                        
+        except Exception as e:
+            print(f"❌ Error uploading {filename} to existing page: {e}")
+            return None
+
+    async def _upload_file_direct_to_notion(self, temp_path: str, filename: str, message_id: str) -> Optional[dict]:
+        """
+        Upload file directly to Notion using the official Direct Upload API (3-step process)
+        """
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.notion_token}',
+                'Notion-Version': '2022-06-28'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                # Step 1: Create file upload object (empty body)
+                print(f"📁 Step 1: Creating file upload object for {filename}...")
+                async with session.post(
+                    'https://api.notion.com/v1/file_uploads',
+                    headers={**headers, 'Content-Type': 'application/json'},
+                    json={}  # Empty body as per official docs
+                ) as response:
+                    if response.status != 200:
+                        response_text = await response.text()
+                        print(f"❌ Failed to create file upload: {response.status} - {response_text}")
+                        return None
+                    
+                    upload_data = await response.json()
+                    upload_id = upload_data.get('id')
+                    upload_url = upload_data.get('upload_url')
+                    
+                    if not upload_id or not upload_url:
+                        print("❌ No upload ID or upload URL in response")
+                        return None
+                    
+                    print(f"✅ File upload object created with ID: {upload_id}")
+                    
+                    # Step 2: Upload file content using multipart/form-data
+                    print(f"📁 Step 2: Uploading file content...")
+                    
+                    # Read file content
+                    def _read_file_content():
+                        with open(temp_path, 'rb') as f:
+                            return f.read()
+                    
+                    file_content = await asyncio.to_thread(_read_file_content)
+                    
+                    # Create multipart form data
+                    form_data = aiohttp.FormData()
+                    mime_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+                    form_data.add_field('file', file_content, filename=filename, content_type=mime_type)
+                    
+                    # Upload the file (don't set Content-Type header, let aiohttp handle multipart boundary)
+                    upload_headers = {k: v for k, v in headers.items() if k != 'Content-Type'}
+                    async with session.post(
+                        upload_url,  # This should be something like /v1/file_uploads/{id}/send
+                        headers=upload_headers,
+                        data=form_data
+                    ) as upload_response:
+                        if upload_response.status not in [200, 201]:
+                            upload_text = await upload_response.text()
+                            print(f"❌ File upload failed: {upload_response.status} - {upload_text}")
+                            return None
+                        
+                        upload_result = await upload_response.json()
+                        print(f"✅ File uploaded successfully: {filename}")
+                        
+                        # Step 3: Return file upload object for Notion properties
+                        # The file can now be attached using the upload_id
+                        file_info = {
+                            "type": "file_upload",
+                            "file_upload": {
+                                "id": upload_id
+                            },
+                            "name": filename
+                        }
+                        
+                        print(f"✅ File ready for attachment with ID: {upload_id}")
+                        return file_info
+                        
+        except Exception as e:
+            print(f"❌ Error in direct Notion upload: {e}")
+            return None
+
     async def _find_message_in_notion(self, message_id: str) -> Optional[str]:
         """
         Search for a message in Notion by its ID and return the Notion page URL
@@ -199,10 +565,11 @@ class SimpleMessageListener:
             print(f"❌ Error searching message in Notion: {e}")
             return None
     
-    async def _process_attachment_with_tempfile(self, attachment: discord.Attachment) -> Optional[dict]:
+    async def _process_attachment_with_tempfile(self, attachment: discord.Attachment, message_id: str) -> Optional[dict]:
         """
-        Process Discord attachment using temporary files
-        Returns file info for Notion or None if failed
+        Process Discord attachment: download, upload to Google Drive, and return file info
+        Returns file info with Google Drive URL or Discord URL as fallback
+        Also determines if the file is an image for direct Notion upload
         """
         try:
             print(f"📥 Processing attachment: {attachment.filename}")
@@ -214,6 +581,10 @@ class SimpleMessageListener:
             _, ext = os.path.splitext(attachment.filename)
             if not ext:
                 ext = '.tmp'
+            
+            # Check if it's an image file
+            image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff', '.tif'}
+            is_image = ext.lower() in image_extensions
             
             # Download file from Discord using temporary file
             async with aiohttp.ClientSession() as session:
@@ -236,31 +607,47 @@ class SimpleMessageListener:
                         file_size = await asyncio.to_thread(_get_file_size)
                         mime_type, _ = mimetypes.guess_type(attachment.filename)
                         
+                        # Try to upload to Google Drive if enabled
+                        google_drive_info = None
+                        final_url = attachment.url  # Fallback to Discord URL
+                        upload_method = "discord"
+                        
+                        if self.google_drive_manager and self.google_drive_manager.is_initialized():
+                            print(f"☁️ Uploading {attachment.filename} to Google Drive...")
+                            google_drive_info = await self.google_drive_manager.upload_file(
+                                temp_path, 
+                                attachment.filename, 
+                                message_id
+                            )
+                            
+                            if google_drive_info:
+                                final_url = google_drive_info['shareable_link']
+                                upload_method = "google_drive"
+                                print(f"✅ File uploaded to Google Drive: {attachment.filename}")
+                            else:
+                                print(f"⚠️ Google Drive upload failed, using Discord URL: {attachment.filename}")
+                        else:
+                            print(f"⚠️ Google Drive not available, using Discord URL: {attachment.filename}")
+                        
                         file_info = {
                             "filename": attachment.filename,
                             "safe_filename": safe_filename,
                             "original_url": attachment.url,
+                            "final_url": final_url,
+                            "upload_method": upload_method,
                             "temp_path": temp_path,
                             "size": file_size,
                             "discord_size": attachment.size,
                             "mime_type": mime_type or 'application/octet-stream',
                             "width": getattr(attachment, 'width', None),
-                            "height": getattr(attachment, 'height', None)
+                            "height": getattr(attachment, 'height', None),
+                            "google_drive_info": google_drive_info,
+                            "is_image": is_image,
+                            "extension": ext.lower(),
+                            "cleanup_needed": True  # Mark for cleanup after Notion upload
                         }
                         
-                        # Clean up temporary file immediately after getting info - Async operation
-                        def _cleanup_tempfile():
-                            try:
-                                os.unlink(temp_path)
-                                return True
-                            except OSError as e:
-                                print(f"⚠️ Could not delete temporary file: {temp_path} - {e}")
-                                return False
-                        
-                        cleanup_success = await asyncio.to_thread(_cleanup_tempfile)
-                        if cleanup_success:
-                            print(f"🧹 Temporary file cleaned up: {attachment.filename}")
-                        
+                        # Note: Don't clean up temp file yet - we might need it for direct Notion upload
                         return file_info
                     else:
                         print(f"❌ Failed to download attachment: HTTP {response.status}")
@@ -270,6 +657,97 @@ class SimpleMessageListener:
             print(f"❌ Error processing attachment {attachment.filename}: {e}")
             return None
     
+    async def _upload_image_to_notion(self, temp_path: str, filename: str) -> Optional[dict]:
+        """
+        Upload image file directly to Notion using internal API (experimental)
+        This uses Notion's internal file upload endpoint that the web client uses
+        """
+        try:
+            print(f"🖼️ Attempting direct upload to Notion: {filename}")
+            
+            # Read file content
+            def _read_file_content():
+                with open(temp_path, 'rb') as f:
+                    return f.read()
+            
+            file_content = await asyncio.to_thread(_read_file_content)
+            
+            # Get file info
+            file_size = len(file_content)
+            mime_type, _ = mimetypes.guess_type(filename)
+            
+            # Try to use Notion's internal file upload API
+            # This is experimental and uses undocumented endpoints
+            notion_headers = {
+                'Authorization': f'Bearer {self.notion_token}',
+                'Notion-Version': '2022-06-28',
+                'Content-Type': 'application/json'
+            }
+            
+            try:
+                # Step 1: Request upload URL from Notion
+                async with aiohttp.ClientSession() as session:
+                    # First, get signed upload URL
+                    upload_request = {
+                        "name": filename,
+                        "contentType": mime_type or 'image/png'
+                    }
+                    
+                    async with session.post(
+                        'https://api.notion.com/v1/files',
+                        headers=notion_headers,
+                        json=upload_request
+                    ) as response:
+                        if response.status == 200:
+                            upload_data = await response.json()
+                            
+                            # Extract upload URL and file info
+                            if 'url' in upload_data:
+                                file_url = upload_data['url']
+                                
+                                print(f"✅ Got Notion upload URL for: {filename}")
+                                
+                                # Return file object for Notion
+                                return {
+                                    "name": filename,
+                                    "file": {
+                                        "url": file_url
+                                    }
+                                }
+                            else:
+                                print(f"⚠️ Notion didn't return upload URL for: {filename}")
+                                return None
+                        else:
+                            print(f"⚠️ Notion file upload request failed: {response.status}")
+                            return None
+                            
+            except Exception as upload_error:
+                print(f"⚠️ Notion direct upload failed: {upload_error}")
+                return None
+            
+        except Exception as e:
+            print(f"❌ Error in direct Notion upload: {e}")
+            return None
+
+    async def _cleanup_temp_files(self, temp_file_paths: List[str]):
+        """Clean up temporary files asynchronously"""
+        for temp_path in temp_file_paths:
+            try:
+                def _cleanup_single_file():
+                    try:
+                        os.unlink(temp_path)
+                        return True
+                    except OSError as e:
+                        print(f"⚠️ Could not delete temporary file: {temp_path} - {e}")
+                        return False
+                
+                cleanup_success = await asyncio.to_thread(_cleanup_single_file)
+                if cleanup_success:
+                    print(f"🧹 Temporary file cleaned up: {os.path.basename(temp_path)}")
+                    
+            except Exception as e:
+                print(f"❌ Error cleaning up temp file {temp_path}: {e}")
+
     async def _save_message_to_notion(self, message: discord.Message):
         """Save message to Notion database with support for replies"""
         if not self.notion_client or not self.notion_database_id:
@@ -297,26 +775,84 @@ class SimpleMessageListener:
             
             # Process attachments - using temporary files
             attachment_files = []
+            preview_images = []  # New list for Preview Images property
+            temp_files_to_cleanup = []  # Track temp files for cleanup
             
             if has_attachment:
                 for attachment in message.attachments:
-                    # Try to process the attachment using temporary files
-                    file_info = await self._process_attachment_with_tempfile(attachment)
+                    # Try to process the attachment with Google Drive integration
+                    file_info = await self._process_attachment_with_tempfile(attachment, message_id)
+                    
+                    # Small additional delay between attachment processing to prevent rate limiting
+                    await asyncio.sleep(0.2)  # 200ms between attachments
                     
                     if file_info:
-                        # Successfully processed with temporary file
-                        print(f"✅ Attachment processed: {file_info['filename']}")
+                        # Successfully processed (either Google Drive or Discord URL)
+                        upload_method = file_info.get('upload_method', 'discord')
+                        final_url = file_info.get('final_url', file_info['original_url'])
+                        is_image = file_info.get('is_image', False)
                         
-                        # Create Notion file object with external URL (more reliable)
-                        attachment_files.append({
+                        print(f"✅ Attachment processed ({upload_method}): {file_info['filename']}")
+                        
+                        # Create Notion file object with the final URL (Google Drive or Discord)
+                        file_entry = {
                             "name": file_info['filename'],
                             "external": {
-                                "url": file_info['original_url']
+                                "url": final_url
                             }
-                        })
+                        }
+                        
+                        # If it's an image, add to both attachment_files and preview_images
+                        if is_image:
+                            # Try direct upload to Notion using official API
+                            direct_notion_file = await self._upload_file_to_notion_official(
+                                file_info['temp_path'], 
+                                file_info['filename'],
+                                message_id
+                            )
+                            
+                            if direct_notion_file:
+                                # Successfully uploaded directly to Notion
+                                preview_images.append(direct_notion_file)
+                                print(f"🖼️ Image uploaded directly to Notion: {file_info['filename']}")
+                            else:
+                                # Fallback to external URL
+                                preview_image_entry = {
+                                    "name": f"🖼️ {file_info['filename']}",
+                                    "external": {
+                                        "url": file_info['original_url']  # Use original Discord URL for images
+                                    }
+                                }
+                                preview_images.append(preview_image_entry)
+                                print(f"🖼️ Image added to Preview Images (external URL): {file_info['filename']}")
+                        
+                        # For non-images, try to upload to Notion as well for the regular Attached File property
+                        else:
+                            # Try direct upload to Notion for non-images too
+                            direct_notion_file = await self._upload_file_to_notion_official(
+                                file_info['temp_path'], 
+                                file_info['filename'],
+                                message_id
+                            )
+                            
+                            if direct_notion_file:
+                                # Use Notion-hosted file
+                                file_entry = direct_notion_file
+                                print(f"📁 File uploaded directly to Notion: {file_info['filename']}")
+                            # Otherwise keep the existing file_entry with external URL
+                        
+                        attachment_files.append(file_entry)
+                        
+                        # Add upload method info to filename if it's Google Drive
+                        if upload_method == "google_drive":
+                            file_entry["name"] = f"📁 {file_info['filename']}"  # Add Drive icon
+                        
+                        # Track temp file for cleanup
+                        if file_info.get('cleanup_needed') and file_info.get('temp_path'):
+                            temp_files_to_cleanup.append(file_info['temp_path'])
                     else:
                         # Fall back to just external URL if processing fails
-                        print(f"⚠️  Could not process attachment, using external URL only: {attachment.filename}")
+                        print(f"⚠️ Could not process attachment, using Discord URL only: {attachment.filename}")
                         attachment_files.append({
                             "name": attachment.filename,
                             "external": {
@@ -324,18 +860,21 @@ class SimpleMessageListener:
                             }
                         })
             
+            # Don't clean up temporary files yet - we need them for quickUpload later
+            # They will be cleaned up after the quickUpload attempts
+            
             # Check for URLs in content
             import re
             url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
             urls = re.findall(url_pattern, content)
             has_url = len(urls) > 0
-            url_adjunta = urls[0] if urls else ""
+            attached_url = urls[0] if urls else ""
             
             # Original message URL
             message_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}" if message.guild else ""
             
             # ISO formatted date
-            fecha_mensaje = message.created_at.isoformat()
+            message_date = message.created_at.isoformat()
             
             # Check if message is a reply
             replied_message_notion_url = None
@@ -348,6 +887,204 @@ class SimpleMessageListener:
                 else:
                     print(f"⚠️  Original message not found in Notion: {replied_message_id}")
             
+            # Create children blocks for page content
+            page_children = [
+                {
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {
+                                    "content": f"📧 Discord Message"
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {
+                                    "content": f"👤 Author: {author_name}\n🖥️ Server: {server_name}\n📺 Channel: #{channel_name}\n📅 Date: {message.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "object": "block",
+                    "type": "divider",
+                    "divider": {}
+                },
+                {
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {
+                                    "content": "💬 Message content:"
+                                },
+                                "annotations": {
+                                    "bold": True
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "object": "block",
+                    "type": "quote",
+                    "quote": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {
+                                    "content": content if len(content) <= 2000 else content[:1997] + "..."
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+            
+            # Add attachment information if present
+            if has_attachment:
+                page_children.extend([
+                    {
+                        "object": "block",
+                        "type": "divider",
+                        "divider": {}
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {
+                                        "content": f"📎 Attached files ({len(message.attachments)}):"
+                                    },
+                                    "annotations": {
+                                        "bold": True
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ])
+                
+                # Add each attachment as a bullet point
+                for attachment in message.attachments:
+                    is_image = any(attachment.filename.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff', '.tif'])
+                    file_icon = "🖼️" if is_image else "📄"
+                    page_children.append({
+                        "object": "block",
+                        "type": "bulleted_list_item",
+                        "bulleted_list_item": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {
+                                        "content": f"{file_icon} {attachment.filename} ({attachment.size} bytes)"
+                                    }
+                                }
+                            ]
+                        }
+                    })
+            
+            # Add URL information if present
+            if has_url:
+                page_children.extend([
+                    {
+                        "object": "block",
+                        "type": "divider",
+                        "divider": {}
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {
+                                        "content": "� URL found in the message:"
+                                    },
+                                    "annotations": {
+                                        "bold": True
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {
+                                        "content": attached_url
+                                    },
+                                    "href": attached_url
+                                }
+                            ]
+                        }
+                    }
+                ])
+            
+            # Add reply information if present
+            if replied_message_notion_url:
+                page_children.extend([
+                    {
+                        "object": "block",
+                        "type": "divider",
+                        "divider": {}
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {
+                                        "content": "💬 This message is a reply to:"
+                                    },
+                                    "annotations": {
+                                        "bold": True
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {
+                                        "content": "View original message"
+                                    },
+                                    "href": replied_message_notion_url
+                                }
+                            ]
+                        }
+                    }
+                ])
+
             # Create Notion page object
             notion_page = {
                 "parent": {"database_id": self.notion_database_id},
@@ -372,7 +1109,7 @@ class SimpleMessageListener:
                     },
                     "Date": {
                         "date": {
-                            "start": fecha_mensaje
+                            "start": message_date
                         }
                     },
                     "Server": {
@@ -395,12 +1132,13 @@ class SimpleMessageListener:
                         ]
                     },
                     "Attached URL": {
-                        "url": url_adjunta if has_url else None
+                        "url": attached_url if has_url else None
                     },
                     "Message URL": {
                         "url": message_url if message_url else None
                     }
-                }
+                },
+                "children": page_children
             }
             
             # Add attachments if present
@@ -409,17 +1147,99 @@ class SimpleMessageListener:
                     "files": attachment_files
                 }
             
+            # Add preview images if present
+            if preview_images:
+                notion_page["properties"]["Preview Images"] = {
+                    "files": preview_images
+                }
+                print(f"🖼️ Added {len(preview_images)} images to Preview Images property")
+            
             # Add original message URL if reply
             if replied_message_notion_url:
                 notion_page["properties"]["Original Message"] = {
                     "url": replied_message_notion_url
                 }
             
-            # Create Notion page in a thread to avoid blocking
-            response = await asyncio.to_thread(
-                self.notion_client.pages.create,
-                **notion_page
-            )
+            # Create Notion page in a thread to avoid blocking with retry logic
+            max_notion_retries = 3
+            response = None
+            for attempt in range(1, max_notion_retries + 1):
+                try:
+                    response = await asyncio.to_thread(
+                        self.notion_client.pages.create,
+                        **notion_page
+                    )
+                    break  # Success
+                except Exception as notion_error:
+                    if await self._handle_rate_limit_error(notion_error, attempt):
+                        if attempt < max_notion_retries:
+                            print(f"🔄 Retrying Notion save (attempt {attempt + 1}/{max_notion_retries})")
+                            continue
+                        else:
+                            print(f"❌ Max Notion retries reached for message {message_id}")
+                            return None
+                    else:
+                        # Not a rate limit error, re-raise
+                        raise notion_error
+            
+            # If we successfully created the page and have temp files, upload them using quickUpload
+            if response and temp_files_to_cleanup:
+                page_id = response['id']  # type: ignore
+                print(f"📄 Page created successfully, now uploading files using quickUpload...")
+                
+                # Upload files to the created page using quickUpload
+                uploaded_files_via_quick = []
+                for temp_path in temp_files_to_cleanup:
+                    # Find the corresponding filename
+                    filename = os.path.basename(temp_path)
+                    
+                    # Try to upload using quickUpload
+                    quick_upload_result = await self._upload_file_to_existing_page(temp_path, filename, page_id)
+                    
+                    if quick_upload_result:
+                        uploaded_files_via_quick.append(quick_upload_result)
+                        print(f"✅ File {filename} uploaded via quickUpload")
+                    else:
+                        print(f"⚠️ quickUpload failed for {filename}, file was already included via external URL")
+                
+                # If we have successfully uploaded files via quickUpload, update the page
+                if uploaded_files_via_quick:
+                    try:
+                        # Get existing properties
+                        existing_attached_files = notion_page["properties"].get("Attached File", {}).get("files", [])
+                        existing_preview_images = notion_page["properties"].get("Preview Images", {}).get("files", [])
+                        
+                        # Add quickUpload files to existing ones
+                        all_attached_files = existing_attached_files + uploaded_files_via_quick
+                        
+                        # Update the page with quickUpload files
+                        update_properties = {
+                            "Attached File": {
+                                "files": all_attached_files
+                            }
+                        }
+                        
+                        # Note: No need to add to Preview Images again as they were already added during initial processing
+                        
+                        # Update the page with new file properties
+                        await asyncio.to_thread(
+                            self.notion_client.pages.update,
+                            page_id=page_id,
+                            properties=update_properties
+                        )
+                        
+                        print(f"✅ Page updated with {len(uploaded_files_via_quick)} files via quickUpload")
+                        
+                    except Exception as update_error:
+                        print(f"⚠️ Failed to update page with quickUpload files: {update_error}")
+                
+                # Clean up temporary files after quickUpload attempts
+                if temp_files_to_cleanup:
+                    await self._cleanup_temp_files(temp_files_to_cleanup)
+            else:
+                # Clean up temp files even if page creation failed or no temp files for quickUpload
+                if temp_files_to_cleanup:
+                    await self._cleanup_temp_files(temp_files_to_cleanup)
             
             reply_info = " (reply)" if replied_message_notion_url else ""
             print(f"✅ Message saved in Notion: {author_name} in #{channel_name}{reply_info}")
@@ -476,25 +1296,44 @@ class SimpleMessageListener:
             url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
             urls = re.findall(url_pattern, content)
             has_url = len(urls) > 0
-            url_adjunta = urls[0] if urls else None
+            attached_url = urls[0] if urls else None
             
             # Original message URL
             message_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}" if message.guild else None
             
             # ISO formatted date
-            fecha_mensaje = message.created_at.isoformat()
+            message_date = message.created_at.isoformat()
             
             # Process attachments
             attached_files = []
+            preview_images_info = []  # For backup logging
             if message.attachments:
                 for attachment in message.attachments:
-                    attached_files.append({
+                    # Check if it's an image
+                    _, ext = os.path.splitext(attachment.filename)
+                    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff', '.tif'}
+                    is_image = ext.lower() in image_extensions
+                    
+                    attachment_info = {
                         "name": attachment.filename,
                         "url": attachment.url,
                         "size": attachment.size,
                         "width": getattr(attachment, 'width', None),
-                        "height": getattr(attachment, 'height', None)
-                    })
+                        "height": getattr(attachment, 'height', None),
+                        "is_image": is_image,
+                        "extension": ext.lower()
+                    }
+                    
+                    attached_files.append(attachment_info)
+                    
+                    # If it's an image, also add to preview images
+                    if is_image:
+                        preview_images_info.append({
+                            "filename": attachment.filename,
+                            "url": attachment.url,
+                            "width": getattr(attachment, 'width', None),
+                            "height": getattr(attachment, 'height', None)
+                        })
             
             # Check if message is a reply
             original_message_id = None
@@ -506,16 +1345,18 @@ class SimpleMessageListener:
                 "timestamp": datetime.datetime.now().isoformat(),
                 "message_id": message_id,
                 "author": author_name,
-                "date": fecha_mensaje,
+                "date": message_date,
                 "server": server_name,
                 "channel": channel_name,
                 "content": content,
-                "attached_url": url_adjunta,
+                "attached_url": attached_url,
                 "message_url": message_url,
                 "attached_files": attached_files if attached_files else None,
+                "preview_images": preview_images_info if preview_images_info else None,
                 "original_message_id": original_message_id,
                 "has_embeds": len(message.embeds) > 0,
-                "embed_count": len(message.embeds) if message.embeds else 0
+                "embed_count": len(message.embeds) if message.embeds else 0,
+                "image_count": len(preview_images_info) if preview_images_info else 0
             }
             
             # Change log file extension to .json
@@ -544,8 +1385,9 @@ class SimpleMessageListener:
             # Execute file operations in a separate thread
             await asyncio.to_thread(_read_write_json_file)
             
-            # Show in console
-            print(f"📝 [BACKUP JSON] [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}")
+            # Show in console with image info
+            image_info = f" [🖼️{len(preview_images_info)} images]" if preview_images_info else ""
+            print(f"📝 [BACKUP JSON] [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}{image_info}")
             
         except Exception as e:
             print(f"❌ Error logging message to JSON file: {e}")
@@ -579,6 +1421,9 @@ class SimpleMessageListener:
             print("   To use Notion, set NOTION_TOKEN and NOTION_DATABASE_ID in the .env file")
         else:
             print("✅ Notion configuration found. Messages will be saved in Notion.")
+            print("   🖼️ Files will be uploaded directly to Notion via official 3-step upload API")
+            print("   📁 All files appear in both 'Attached File' and 'Preview Images' (for images) properties")
+            print("   🔄 Uses official endpoints: /files/upload, signed URL, /files/upload/{id}/complete")
         
         # Heartbeat configuration validation
         if not self.heartbeat_url:
@@ -586,8 +1431,59 @@ class SimpleMessageListener:
         else:
             print(f"✅ Heartbeat system configured: {self.heartbeat_url[:50]}...")
         
+        # Google Drive configuration validation
+        if self.google_drive_enabled:
+            if not os.path.exists(self.google_drive_credentials):
+                print(f"❌ Google Drive credentials not found: {self.google_drive_credentials}")
+                print("   Download credentials.json from Google Cloud Console")
+                print("   Set GOOGLE_DRIVE_ENABLED=false to disable Google Drive")
+            else:
+                print("✅ Google Drive enabled and credentials found")
+                if self.google_drive_folder_id:
+                    print(f"📁 Target folder ID: {self.google_drive_folder_id}")
+                else:
+                    print("📁 Will create 'Discord Attachments' folder in personal drive")
+        else:
+            print("⚠️  Google Drive disabled. Files will use Discord URLs only.")
+            print("   Set GOOGLE_DRIVE_ENABLED=true to enable Google Drive uploads")
+        
         return True
     
+    async def show_runtime_stats(self):
+        """Show runtime statistics"""
+        if not self.is_monitoring:
+            print("📊 Bot is not monitoring yet")
+            return
+            
+        print("📊 Runtime Statistics:")
+        print(f"   - Messages processed: {self.processed_messages}")
+        print(f"   - Failed messages: {self.failed_messages}")
+        print(f"   - Success rate: {((self.processed_messages / (self.processed_messages + self.failed_messages)) * 100):.1f}%" if (self.processed_messages + self.failed_messages) > 0 else "N/A")
+        print(f"   - Monitoring status: {'🟢 Active' if self.is_monitoring else '🔴 Inactive'}")
+        
+        if self.heartbeat_system:
+            heartbeat_status = await self.get_heartbeat_status()
+            print(f"   - Heartbeat: {heartbeat_status.get('status', 'Unknown')}")
+
+    async def graceful_shutdown(self):
+        """Gracefully shutdown the bot"""
+        print("\n🛑 Initiating graceful shutdown...")
+        self.is_monitoring = False
+        
+        # Send final heartbeat
+        if self.heartbeat_system:
+            await self.heartbeat_system.send_ping("success", f"Bot shutting down. Total processed: {self.processed_messages}")
+            await self.heartbeat_system.stop_heartbeat()
+        
+        # Show final stats
+        await self.show_runtime_stats()
+        
+        # Close Discord connection
+        if not self.client.is_closed():
+            await self.client.close()
+            
+        print("✅ Bot shutdown completed")
+
     def run(self):
         """Start the bot"""
         if not self.validate_config():
@@ -595,9 +1491,12 @@ class SimpleMessageListener:
         
         print("🚀 Starting Discord Message Listener...")
         print("📋 Configuration:")
+        print(f"   - Mode: 🔴 Real-time monitoring (NEW MESSAGES ONLY)")
+        print(f"   - Self-monitoring: ✅ ENABLED (will monitor own messages)")
         print(f"   - Server: {self.target_server_id}")
         print(f"   - Channels: {'Specific' if self.target_channel_ids else 'All'}")
-        print(f"   - Notion: {'✅ Configured' if self.notion_client else '❌ Not configured'}")
+        print(f"   - Notion: {'✅ Configured (Official 3-Step Upload API + Smart Rate Limiting)' if self.notion_client else '❌ Not configured'}")
+        print(f"   - Google Drive: {'✅ Enabled' if self.google_drive_enabled else '❌ Disabled'}")
         print(f"   - Heartbeats: {'✅ Configured' if self.heartbeat_system else '❌ Not configured'}")
         print(f"   - Backup file: {self.log_file}")
         print("-" * 60)
@@ -608,10 +1507,12 @@ class SimpleMessageListener:
             else:
                 print("❌ Invalid token")
         except KeyboardInterrupt:
-            print("\n⏹️ Stopping bot...")
-            # Stop heartbeat system
-            if self.heartbeat_system:
-                asyncio.run(self.heartbeat_system.stop_heartbeat())
+            print("\n⏹️ Keyboard interrupt received...")
+            # Run graceful shutdown
+            try:
+                asyncio.run(self.graceful_shutdown())
+            except Exception as shutdown_error:
+                print(f"⚠️ Error during shutdown: {shutdown_error}")
         except Exception as error:
             print(f"❌ Error starting bot: {error}")
             if "Improper token" in str(error):
@@ -619,7 +1520,10 @@ class SimpleMessageListener:
             
             # Send critical error ping
             if self.heartbeat_system:
-                asyncio.run(self.heartbeat_system.send_ping("fail", f"Critical error: {str(error)[:100]}"))
+                try:
+                    asyncio.run(self.heartbeat_system.send_ping("fail", f"Critical error: {str(error)[:100]}"))
+                except:
+                    pass  # Don't fail on heartbeat error during shutdown
     
     async def get_heartbeat_status(self) -> dict:
         """Get heartbeat system status"""

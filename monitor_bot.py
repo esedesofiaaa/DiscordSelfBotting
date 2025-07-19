@@ -149,11 +149,11 @@ class BotMonitor:
         
         # Intentar reiniciar el bot
         try:
-            # Buscar el script start_simple_listener.sh
-            start_script = Path('./start_simple_listener.sh')
+            # Buscar el script start_bot.sh
+            start_script = Path('./start_bot.sh')
             
             if start_script.exists():
-                print("🚀 Reiniciando bot con start_simple_listener.sh")
+                print("🚀 Reiniciando bot con start_bot.sh")
                 process = await asyncio.create_subprocess_exec(
                     'bash', str(start_script),
                     stdout=asyncio.subprocess.PIPE,
