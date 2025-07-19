@@ -103,9 +103,10 @@ load_dotenv()
 
 class SimpleMessageListener:
     """
-    Bot to read and upload all Discord messages from July 1st to current date
+    Bot to monitor and log new Discord messages in real-time
     
     Features:
+    - Listens for new messages and processes them instantly
     - Uploads files to Notion using official quickUpload function (3-step API process)
     - Supports Google Drive integration for file backup
     - Handles images and files with direct Notion upload
@@ -119,14 +120,10 @@ class SimpleMessageListener:
         self.target_channel_ids = self._parse_channel_ids(os.getenv('MONITORING_CHANNEL_IDS', ''))
         self.log_file = os.getenv('LOG_FILE', './logs/messages.json')
         
-        # Date range configuration
-        self.start_date = datetime.datetime(2025, 7, 18, 0, 42, tzinfo=datetime.timezone.utc)
-        self.end_date = datetime.datetime.now(datetime.timezone.utc)
-        
-        # Processing control
+        # Real-time monitoring control
         self.processed_messages = 0
         self.failed_messages = 0
-        self.is_processing = False
+        self.is_monitoring = False
         
         # Notion configuration
         self.notion_token = os.getenv('NOTION_TOKEN')
@@ -207,10 +204,10 @@ class SimpleMessageListener:
             if self.target_channel_ids:
                 print(f"📋 Specific channels: {', '.join(self.target_channel_ids)}")
             else:
-                print("📋 Processing ALL channels in the server")
+                print("📋 Monitoring ALL channels in the server")
             
             print(f"📁 Saving messages to: {self.log_file}")
-            print(f"📅 Date range: {self.start_date.date()} to {self.end_date.date()}")
+            print("� Real-time monitoring mode: Listening for new messages...")
             
             # Start heartbeat system
             if self.heartbeat_system:
@@ -237,8 +234,17 @@ class SimpleMessageListener:
                     print(f"👥 Members: {target_server.member_count}")
                 print("-" * 60)
                 
-                # Start message processing
-                await self._process_all_messages()
+                # Start real-time monitoring
+                self.is_monitoring = True
+                print("🎯 Bot is now monitoring for new messages...")
+                print("💡 The bot will now process ALL NEW MESSAGES in real-time (INCLUDING OWN MESSAGES)")
+                print("⚠️  WARNING: Self-monitoring is enabled - be careful with automated responses!")
+                print("💡 To stop the bot, press Ctrl+C")
+                print("-" * 60)
+                
+                # Send startup heartbeat
+                if self.heartbeat_system:
+                    await self.heartbeat_system.send_ping("success", "Bot started successfully - monitoring new messages")
             else:
                 print(f"❌ Server not found! Check the server ID.")
                 print("-" * 60)
@@ -267,6 +273,63 @@ class SimpleMessageListener:
             # Send reconnect ping
             if self.heartbeat_system:
                 await self.heartbeat_system.send_ping("success", "Connection resumed successfully")
+        
+        @self.client.event
+        async def on_message(message: discord.Message):
+            """Handle new messages in real-time"""
+            # Skip if not monitoring yet
+            if not self.is_monitoring:
+                return
+            
+            # Note: Removed self-message filtering - now monitors ALL messages including own
+            
+            # Check if we should monitor this message
+            if not self._should_monitor_message(message):
+                return
+            
+            try:
+                print(f"📨 New message from @{message.author.name} in #{getattr(message.channel, 'name', 'DM')}")
+                
+                # Process the message with retry logic for rate limits
+                max_retries = 3
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        await self._log_message(message)
+                        break  # Success, exit retry loop
+                    except Exception as msg_error:
+                        # Check if it's a rate limit error
+                        if await self._handle_rate_limit_error(msg_error, attempt):
+                            if attempt < max_retries:
+                                print(f"🔄 Retrying message processing (attempt {attempt + 1}/{max_retries})")
+                                continue
+                            else:
+                                print(f"❌ Max retries reached for message {message.id}")
+                                raise msg_error
+                        else:
+                            # Not a rate limit error, re-raise immediately
+                            raise msg_error
+                
+                self.processed_messages += 1
+                
+                # Show progress every 10 messages (less frequent for real-time)
+                if self.processed_messages % 10 == 0:
+                    print(f"📊 Progress: {self.processed_messages} messages processed...")
+                
+                # Send progress heartbeat every 50 messages
+                if self.heartbeat_system and self.processed_messages % 50 == 0:
+                    progress_msg = f"Processed {self.processed_messages} messages, failed: {self.failed_messages}"
+                    await self.heartbeat_system.send_ping("success", progress_msg)
+                
+                # Smaller delay for real-time processing (to prevent rate limiting)
+                await asyncio.sleep(0.2)  # 200ms delay between message processing
+                
+            except Exception as e:
+                print(f"❌ Error processing message {message.id}: {e}")
+                self.failed_messages += 1
+                
+                # Send error heartbeat for critical failures
+                if self.heartbeat_system:
+                    await self.heartbeat_system.send_ping("fail", f"Message processing error: {str(e)[:100]}")
     
     def _should_monitor_message(self, message: discord.Message) -> bool:
         """Determine if the message should be logged"""
@@ -460,134 +523,6 @@ class SimpleMessageListener:
             print(f"❌ Error in direct Notion upload: {e}")
             return None
 
-    async def _process_all_messages(self):
-        """Process all messages from the specified date range"""
-        if self.is_processing:
-            print("⚠️ Processing already in progress")
-            return
-        
-        self.is_processing = True
-        self.processed_messages = 0
-        self.failed_messages = 0
-        
-        try:
-            target_server = self._get_target_server()
-            if not target_server:
-                print("❌ Target server not found")
-                return
-            
-            print(f"🔍 Starting to process messages from {self.start_date.date()} to {self.end_date.date()}")
-            
-            # Get channels to process
-            channels_to_process = []
-            
-            if self.target_channel_ids:
-                # Process specific channels
-                for channel_id in self.target_channel_ids:
-                    try:
-                        channel = target_server.get_channel(int(channel_id))
-                        if channel and isinstance(channel, discord.TextChannel):
-                            channels_to_process.append(channel)
-                        else:
-                            print(f"⚠️ Channel not found or not a text channel: {channel_id}")
-                    except ValueError:
-                        print(f"⚠️ Invalid channel ID: {channel_id}")
-            else:
-                # Process all text channels
-                channels_to_process = [ch for ch in target_server.channels if isinstance(ch, discord.TextChannel)]
-            
-            print(f"📋 Found {len(channels_to_process)} channels to process")
-            
-            for channel in channels_to_process:
-                await self._process_channel_messages(channel)
-                
-                # Send progress heartbeat
-                if self.heartbeat_system:
-                    progress_msg = f"Processed {self.processed_messages} messages, failed: {self.failed_messages}"
-                    await self.heartbeat_system.send_ping("success", progress_msg)
-            
-            # Final summary
-            print("-" * 60)
-            print(f"✅ Processing completed!")
-            print(f"📊 Total messages processed: {self.processed_messages}")
-            print(f"❌ Failed messages: {self.failed_messages}")
-            print(f"💾 Messages saved to: {self.log_file}")
-            
-            # Send completion heartbeat
-            if self.heartbeat_system:
-                completion_msg = f"Processing completed. Total: {self.processed_messages}, Failed: {self.failed_messages}"
-                await self.heartbeat_system.send_ping("success", completion_msg)
-            
-            print("-" * 60)
-            print("🏁 Bot will close in 5 seconds...")
-            await asyncio.sleep(5)
-            await self.client.close()
-            
-        except Exception as e:
-            print(f"❌ Error during message processing: {e}")
-            
-            # Send error heartbeat
-            if self.heartbeat_system:
-                await self.heartbeat_system.send_ping("fail", f"Processing error: {str(e)[:100]}")
-            
-        finally:
-            self.is_processing = False
-    
-    async def _process_channel_messages(self, channel: discord.TextChannel):
-        """Process all messages in a specific channel within the date range"""
-        try:
-            print(f"📝 Processing channel: #{channel.name}")
-            
-            channel_message_count = 0
-            
-            # Get messages in the date range using Discord's history
-            async for message in channel.history(
-                limit=None,
-                after=self.start_date,
-                before=self.end_date,
-                oldest_first=True
-            ):
-                try:
-                    # Process the message with retry logic for rate limits
-                    max_retries = 3
-                    for attempt in range(1, max_retries + 1):
-                        try:
-                            await self._log_message(message)
-                            break  # Success, exit retry loop
-                        except Exception as msg_error:
-                            # Check if it's a rate limit error
-                            if await self._handle_rate_limit_error(msg_error, attempt):
-                                if attempt < max_retries:
-                                    print(f"🔄 Retrying message processing (attempt {attempt + 1}/{max_retries})")
-                                    continue
-                                else:
-                                    print(f"❌ Max retries reached for message {message.id}")
-                                    raise msg_error
-                            else:
-                                # Not a rate limit error, re-raise immediately
-                                raise msg_error
-                    
-                    self.processed_messages += 1
-                    channel_message_count += 1
-                    
-                    # Show progress every 50 messages
-                    if self.processed_messages % 50 == 0:
-                        print(f"📊 Progress: {self.processed_messages} messages processed...")
-                    
-                    # Smart delay to prevent rate limiting
-                    await self._smart_delay(self.processed_messages)
-                    
-                except Exception as e:
-                    print(f"❌ Error processing message {message.id}: {e}")
-                    self.failed_messages += 1
-            
-            print(f"✅ Channel #{channel.name} completed: {channel_message_count} messages")
-            
-        except discord.Forbidden:
-            print(f"❌ No access to channel #{channel.name}")
-        except Exception as e:
-            print(f"❌ Error processing channel #{channel.name}: {e}")
-    
     async def _find_message_in_notion(self, message_id: str) -> Optional[str]:
         """
         Search for a message in Notion by its ID and return the Notion page URL
@@ -1514,6 +1449,41 @@ class SimpleMessageListener:
         
         return True
     
+    async def show_runtime_stats(self):
+        """Show runtime statistics"""
+        if not self.is_monitoring:
+            print("📊 Bot is not monitoring yet")
+            return
+            
+        print("📊 Runtime Statistics:")
+        print(f"   - Messages processed: {self.processed_messages}")
+        print(f"   - Failed messages: {self.failed_messages}")
+        print(f"   - Success rate: {((self.processed_messages / (self.processed_messages + self.failed_messages)) * 100):.1f}%" if (self.processed_messages + self.failed_messages) > 0 else "N/A")
+        print(f"   - Monitoring status: {'🟢 Active' if self.is_monitoring else '🔴 Inactive'}")
+        
+        if self.heartbeat_system:
+            heartbeat_status = await self.get_heartbeat_status()
+            print(f"   - Heartbeat: {heartbeat_status.get('status', 'Unknown')}")
+
+    async def graceful_shutdown(self):
+        """Gracefully shutdown the bot"""
+        print("\n🛑 Initiating graceful shutdown...")
+        self.is_monitoring = False
+        
+        # Send final heartbeat
+        if self.heartbeat_system:
+            await self.heartbeat_system.send_ping("success", f"Bot shutting down. Total processed: {self.processed_messages}")
+            await self.heartbeat_system.stop_heartbeat()
+        
+        # Show final stats
+        await self.show_runtime_stats()
+        
+        # Close Discord connection
+        if not self.client.is_closed():
+            await self.client.close()
+            
+        print("✅ Bot shutdown completed")
+
     def run(self):
         """Start the bot"""
         if not self.validate_config():
@@ -1521,6 +1491,8 @@ class SimpleMessageListener:
         
         print("🚀 Starting Discord Message Listener...")
         print("📋 Configuration:")
+        print(f"   - Mode: 🔴 Real-time monitoring (NEW MESSAGES ONLY)")
+        print(f"   - Self-monitoring: ✅ ENABLED (will monitor own messages)")
         print(f"   - Server: {self.target_server_id}")
         print(f"   - Channels: {'Specific' if self.target_channel_ids else 'All'}")
         print(f"   - Notion: {'✅ Configured (Official 3-Step Upload API + Smart Rate Limiting)' if self.notion_client else '❌ Not configured'}")
@@ -1535,10 +1507,12 @@ class SimpleMessageListener:
             else:
                 print("❌ Invalid token")
         except KeyboardInterrupt:
-            print("\n⏹️ Stopping bot...")
-            # Stop heartbeat system
-            if self.heartbeat_system:
-                asyncio.run(self.heartbeat_system.stop_heartbeat())
+            print("\n⏹️ Keyboard interrupt received...")
+            # Run graceful shutdown
+            try:
+                asyncio.run(self.graceful_shutdown())
+            except Exception as shutdown_error:
+                print(f"⚠️ Error during shutdown: {shutdown_error}")
         except Exception as error:
             print(f"❌ Error starting bot: {error}")
             if "Improper token" in str(error):
@@ -1546,7 +1520,10 @@ class SimpleMessageListener:
             
             # Send critical error ping
             if self.heartbeat_system:
-                asyncio.run(self.heartbeat_system.send_ping("fail", f"Critical error: {str(error)[:100]}"))
+                try:
+                    asyncio.run(self.heartbeat_system.send_ping("fail", f"Critical error: {str(error)[:100]}"))
+                except:
+                    pass  # Don't fail on heartbeat error during shutdown
     
     async def get_heartbeat_status(self) -> dict:
         """Get heartbeat system status"""

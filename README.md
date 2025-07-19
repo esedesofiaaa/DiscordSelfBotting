@@ -101,7 +101,7 @@ python simple_message_listener.py
 
 O usando el script de inicio:
 ```bash
-./start_simple_listener.sh
+./start_bot.sh
 ```
 
 ### Sistema de Monitoreo con Heartbeats
@@ -113,7 +113,7 @@ Para máxima confiabilidad, usa el sistema de monitoreo integrado:
 python3 test_heartbeat.py
 
 # Iniciar bot con heartbeats automáticos
-./start_simple_listener.sh
+./start_bot.sh
 
 # Iniciar monitor independiente (recomendado para producción)
 ./start_monitor.sh start

@@ -41,7 +41,6 @@ wheels/
 .DS_Store
 Thumbs.db
 
-# Node modules (if any)
-node_modules/
+# credentials and sensitive files
 token.json
 credentials.json

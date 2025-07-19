@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Script de inicio para el Discord Message Listener
-echo "🚀 Iniciando Discord Message Listener..."
+# Script de inicio para el Discord Self-Bot (Real-time monitoring)
+echo "🚀 Iniciando Discord Self-Bot en modo tiempo real..."
 echo "=========================================="
 
 # Verificar que existe el archivo .env
@@ -25,10 +25,23 @@ if ! command -v pip3 &> /dev/null; then
     exit 1
 fi
 
+# Activar el entorno virtual si existe
+if [ -d "discord_selfbotting" ]; then
+    echo "🐍 Activando entorno virtual..."
+    source discord_selfbotting/bin/activate
+fi
+
 # Instalar dependencias si es necesario
 echo "📦 Verificando dependencias..."
 pip3 install -r requirements.txt
 
-# Ejecutar el listener
-echo "🎧 Iniciando listener..."
+# Mostrar información del modo
+echo ""
+echo "🔴 MODO: Monitoreo en tiempo real"
+echo "📝 El bot procesará NUEVOS MENSAJES que lleguen a partir de ahora"
+echo "💡 Para detener el bot, presiona Ctrl+C"
+echo ""
+
+# Ejecutar el bot
+echo "🎧 Iniciando bot..."
 python3 simple_message_listener.py

@@ -94,14 +94,15 @@ EOF
     echo "   - MONITORING_SERVER_ID: ID del servidor a monitorear"
     echo "   - Opcionalmente: tokens de Notion y otros parámetros"
     echo ""
-    echo "📖 Consulta README_ONE_TIME.md para más detalles"
+    echo "📖 Consulta README.md para más detalles"
 else
     echo "✅ Archivo .env ya existe"
 fi
 
 # Hacer scripts ejecutables
 echo "🔐 Configurando permisos..."
-chmod +x run_one_time.sh 2>/dev/null || true
+chmod +x start_bot.sh 2>/dev/null || true
+chmod +x start_monitor.sh 2>/dev/null || true
 chmod +x setup.sh 2>/dev/null || true
 
 echo ""
@@ -109,11 +110,12 @@ echo "🎉 Configuración completada!"
 echo ""
 echo "📋 Próximos pasos:"
 echo "1. Edita el archivo .env con tus configuraciones"
-echo "2. Ejecuta: ./run_one_time.sh"
+echo "2. Ejecuta: ./start_bot.sh"
 echo ""
 echo "📚 Archivos importantes:"
 echo "   - .env: Configuraciones"
-echo "   - README_ONE_TIME.md: Documentación completa"
-echo "   - run_one_time.sh: Script de ejecución"
+echo "   - README.md: Documentación completa"
+echo "   - start_bot.sh: Script de inicio en tiempo real"
+echo "   - start_monitor.sh: Script de monitoreo independiente"
 echo ""
-echo "🚀 ¡Listo para procesar mensajes!"
+echo "🚀 ¡Listo para monitorear mensajes en tiempo real!"

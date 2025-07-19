@@ -104,9 +104,31 @@ jobs:
           echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
           echo "MONITORING_SERVER_ID=${{ vars.MONITORING_SERVER_ID }}" >> .env
           echo "MONITORING_CHANNEL_IDS=${{ vars.MONITORING_CHANNEL_IDS }}" >> .env
-          echo "LOG_FILE=./logs/messages.txt" >> .env
+          echo "LOG_FILE=./logs/messages.json" >> .env
           echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .env
           echo "NOTION_DATABASE_ID=${{ vars.NOTION_DATABASE_ID }}" >> .env
+          echo "HEALTHCHECKS_PING_URL=${{ secrets.HEALTHCHECKS_PING_URL }}" >> .env
+          echo "HEARTBEAT_INTERVAL=${{ vars.HEARTBEAT_INTERVAL }}" >> .env
+          echo "MONITOR_INTERVAL=${{ vars.MONITOR_INTERVAL }}" >> .env
+          echo "BOT_PROCESS_NAME=${{ vars.BOT_PROCESS_NAME }}" >> .env
+          echo "AUTO_RESTART_BOT=${{ vars.AUTO_RESTART_BOT }}" >> .env
+          echo "GOOGLE_DRIVE_ENABLED=${{ vars.GOOGLE_DRIVE_ENABLED }}" >> .env
+          echo "GOOGLE_DRIVE_CREDENTIALS=credentials.json" >> .env
+          echo "GOOGLE_DRIVE_TOKEN=token.json" >> .env
+          echo "GOOGLE_DRIVE_FOLDER_ID=${{ vars.GOOGLE_DRIVE_FOLDER_ID }}" >> .env
+          echo "GOOGLE_DRIVE_IMAGE_MODE=${{ vars.GOOGLE_DRIVE_IMAGE_MODE }}" >> .env
+          
+          # Create Google Drive credentials file if enabled
+          if [ "${{ vars.GOOGLE_DRIVE_ENABLED }}" = "true" ]; then
+            echo "🔑 Creating Google Drive credentials file..."
+            echo '${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}' > credentials.json
+            chmod 600 credentials.json
+            
+            echo "🔑 Creating Google Drive token file..."
+            echo '${{ secrets.GOOGLE_DRIVE_TOKEN_JSON }}' > token.json
+            chmod 600 token.json
+          fi
+          
           # Asegúrate de que .env no tiene permisos de lectura para todos
           chmod 600 .env
 
