@@ -207,7 +207,7 @@ class SimpleMessageListener:
                 print("📋 Monitoring ALL channels in the server")
             
             print(f"📁 Saving messages to: {self.log_file}")
-            print("� Real-time monitoring mode: Listening for new messages...")
+            print("🎯 Real-time monitoring mode: Listening for new messages...")
             
             # Start heartbeat system
             if self.heartbeat_system:
