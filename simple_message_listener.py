@@ -8,7 +8,7 @@ import mimetypes
 import json
 import re
 import random
-import requests  # Added for quickUpload function
+import requests
 from typing import Optional, List
 from dotenv import load_dotenv
 from notion_client import Client
@@ -120,7 +120,7 @@ class SimpleMessageListener:
         self.log_file = os.getenv('LOG_FILE', './logs/messages.json')
         
         # Date range configuration
-        self.start_date = datetime.datetime(2025, 7, 16, 1, 49, tzinfo=datetime.timezone.utc)
+        self.start_date = datetime.datetime(2025, 7, 18, 0, 42, tzinfo=datetime.timezone.utc)
         self.end_date = datetime.datetime.now(datetime.timezone.utc)
         
         # Processing control
@@ -1284,16 +1284,7 @@ class SimpleMessageListener:
                             }
                         }
                         
-                        # Also add to preview images if they are images
-                        image_files_quick = [f for f in uploaded_files_via_quick 
-                                           if any(f["name"].lower().endswith(ext) 
-                                                 for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff', '.tif'])]
-                        
-                        if image_files_quick:
-                            all_preview_images = existing_preview_images + image_files_quick
-                            update_properties["Preview Images"] = {
-                                "files": all_preview_images
-                            }
+                        # Note: No need to add to Preview Images again as they were already added during initial processing
                         
                         # Update the page with new file properties
                         await asyncio.to_thread(
