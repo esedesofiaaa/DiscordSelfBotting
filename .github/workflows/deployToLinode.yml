@@ -113,20 +113,21 @@ jobs:
           echo "BOT_PROCESS_NAME=${{ vars.BOT_PROCESS_NAME }}" >> .env
           echo "AUTO_RESTART_BOT=${{ vars.AUTO_RESTART_BOT }}" >> .env
           echo "GOOGLE_DRIVE_ENABLED=${{ vars.GOOGLE_DRIVE_ENABLED }}" >> .env
-          echo "GOOGLE_DRIVE_CREDENTIALS=credentials.json" >> .env
-          echo "GOOGLE_DRIVE_TOKEN=token.json" >> .env
+          echo "GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json" >> .env
           echo "GOOGLE_DRIVE_FOLDER_ID=${{ vars.GOOGLE_DRIVE_FOLDER_ID }}" >> .env
-          echo "GOOGLE_DRIVE_IMAGE_MODE=${{ vars.GOOGLE_DRIVE_IMAGE_MODE }}" >> .env
           
-          # Create Google Drive credentials file if enabled
+          # Create Service Account credentials file if Google Drive is enabled
           if [ "${{ vars.GOOGLE_DRIVE_ENABLED }}" = "true" ]; then
-            echo "🔑 Creating Google Drive credentials file..."
-            echo '${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}' > credentials.json
-            chmod 600 credentials.json
+            echo "🔑 Creating Google Drive Service Account file..."
+            echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_FILE }}' > service_account.json
+            chmod 600 service_account.json
+            echo "✅ Service Account file created successfully"
             
-            echo "🔑 Creating Google Drive token file..."
-            echo '${{ secrets.GOOGLE_DRIVE_TOKEN_JSON }}' > token.json
-            chmod 600 token.json
+            # Optional: Verify JSON format
+            python3 -c "import json; json.load(open('service_account.json')); print('✅ Service Account JSON is valid')" || {
+              echo "❌ Invalid Service Account JSON format"
+              exit 1
+            }
           fi
           
           # Asegúrate de que .env no tiene permisos de lectura para todos

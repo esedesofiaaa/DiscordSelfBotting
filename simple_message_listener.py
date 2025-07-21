@@ -136,10 +136,13 @@ class SimpleMessageListener:
         self.heartbeat_interval = int(heartbeat_val)
         self.heartbeat_system = None
         
-        # Google Drive configuration
+        # Google Drive configuration - ACTUALIZADO PARA SERVICE ACCOUNT
         self.google_drive_enabled = os.getenv('GOOGLE_DRIVE_ENABLED', 'false').lower() == 'true'
-        self.google_drive_credentials = os.getenv('GOOGLE_DRIVE_CREDENTIALS', 'credentials.json')
-        self.google_drive_token = os.getenv('GOOGLE_DRIVE_TOKEN', 'token.json')
+        
+        # 🔥 CAMBIO: Soporte para Service Account
+        self.google_drive_service_account = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')  # NUEVO
+        self.google_drive_credentials = os.getenv('GOOGLE_DRIVE_CREDENTIALS', 'credentials.json')  # Legacy OAuth2
+        self.google_drive_token = os.getenv('GOOGLE_DRIVE_TOKEN', 'token.json')  # Legacy OAuth2
         self.google_drive_folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID', None)  # Specific folder ID
         self.google_drive_manager = None
         
@@ -157,15 +160,33 @@ class SimpleMessageListener:
                 print(f"❌ Error initializing Notion: {e}")
                 self.notion_client = None
         
-        # Initialize Google Drive manager if enabled
+        # Initialize Google Drive manager if enabled - ACTUALIZADO
         if self.google_drive_enabled:
             try:
-                self.google_drive_manager = GoogleDriveManager(
-                    credentials_path=self.google_drive_credentials,
-                    token_path=self.google_drive_token,
-                    target_folder_id=self.google_drive_folder_id  # Pass specific folder ID
-                )
-                print("✅ Google Drive manager created")
+                # 🔥 CAMBIO: Detectar si usar Service Account o OAuth2
+                if self.google_drive_service_account and os.path.exists(self.google_drive_service_account):
+                    # Usar Service Account (NUEVO MÉTODO)
+                    self.google_drive_manager = GoogleDriveManager(
+                        credentials_path=self.google_drive_service_account,  # service_account.json
+                        token_path=None,  # No se usa con Service Account
+                        target_folder_id=self.google_drive_folder_id
+                    )
+                    print("✅ Google Drive manager created (Service Account)")
+                elif os.path.exists(self.google_drive_credentials):
+                    # Usar OAuth2 (MÉTODO LEGACY)
+                    self.google_drive_manager = GoogleDriveManager(
+                        credentials_path=self.google_drive_credentials,  # credentials.json
+                        token_path=self.google_drive_token,  # token.json
+                        target_folder_id=self.google_drive_folder_id
+                    )
+                    print("✅ Google Drive manager created (OAuth2 - Legacy)")
+                    print("⚠️  Consider migrating to Service Account for better reliability")
+                else:
+                    print("❌ No valid Google Drive credentials found")
+                    print("   Service Account file: service_account.json (recommended)")
+                    print("   OAuth2 credentials: credentials.json (legacy)")
+                    self.google_drive_manager = None
+                    
             except Exception as e:
                 print(f"❌ Error creating Google Drive manager: {e}")
                 self.google_drive_manager = None
@@ -1416,7 +1437,7 @@ class SimpleMessageListener:
             print("❌ Server ID not configured. Set MONITORING_SERVER_ID in the .env file")
             return False
         
-        # Notion configuration validation (optional but recommended)
+        # Notion configuration validation (opcional but recommended)
         if not self.notion_token or not self.notion_database_id:
             print("⚠️  Notion configuration not found. Messages will be saved only to text file.")
             print("   To use Notion, set NOTION_TOKEN and NOTION_DATABASE_ID in the .env file")
@@ -1432,18 +1453,29 @@ class SimpleMessageListener:
         else:
             print(f"✅ Heartbeat system configured: {self.heartbeat_url[:50]}...")
         
-        # Google Drive configuration validation
+        # 🔥 ACTUALIZADO: Google Drive configuration validation
         if self.google_drive_enabled:
-            if not os.path.exists(self.google_drive_credentials):
-                print(f"❌ Google Drive credentials not found: {self.google_drive_credentials}")
-                print("   Download credentials.json from Google Cloud Console")
-                print("   Set GOOGLE_DRIVE_ENABLED=false to disable Google Drive")
-            else:
-                print("✅ Google Drive enabled and credentials found")
+            if self.google_drive_service_account and os.path.exists(self.google_drive_service_account):
+                print("✅ Google Drive enabled with Service Account (recommended)")
+                print(f"📁 Service Account file: {self.google_drive_service_account}")
+                if self.google_drive_folder_id:
+                    print(f"📁 Target folder ID: {self.google_drive_folder_id}")
+                else:
+                    print("📁 Will create 'Discord Attachments' folder")
+            elif os.path.exists(self.google_drive_credentials):
+                print("✅ Google Drive enabled with OAuth2 credentials (legacy)")
+                print("⚠️  Consider migrating to Service Account for server environments")
+                print(f"📁 OAuth2 credentials: {self.google_drive_credentials}")
                 if self.google_drive_folder_id:
                     print(f"📁 Target folder ID: {self.google_drive_folder_id}")
                 else:
                     print("📁 Will create 'Discord Attachments' folder in personal drive")
+            else:
+                print("❌ Google Drive enabled but no valid credentials found")
+                print("   For Service Account: Set GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json")
+                print("   For OAuth2 (legacy): Download credentials.json from Google Cloud Console")
+                print("   Set GOOGLE_DRIVE_ENABLED=false to disable Google Drive")
+                return False
         else:
             print("⚠️  Google Drive disabled. Files will use Discord URLs only.")
             print("   Set GOOGLE_DRIVE_ENABLED=true to enable Google Drive uploads")

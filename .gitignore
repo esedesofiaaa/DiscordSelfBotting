@@ -42,5 +42,4 @@ wheels/
 Thumbs.db
 
 # credentials and sensitive files
-token.json
-credentials.json
+service_account.json
