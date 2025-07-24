@@ -910,61 +910,14 @@ class SimpleMessageListener:
                     print(f"⚠️  Original message not found in Notion: {replied_message_id}")
             
             # Create children blocks for page content
-            page_children = [
+            page_children = []
+            
+            # FIRST: Add message content in a structured format
+            page_children.extend([
                 {
                     "object": "block",
-                    "type": "heading_2",
-                    "heading_2": {
-                        "rich_text": [
-                            {
-                                "type": "text",
-                                "text": {
-                                    "content": f"📧 Discord Message"
-                                }
-                            }
-                        ]
-                    }
-                },
-                {
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [
-                            {
-                                "type": "text",
-                                "text": {
-                                    "content": f"👤 Author: {author_name}\n🖥️ Server: {server_name}\n📺 Channel: #{channel_name}\n📅 Date: {message.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-                                }
-                            }
-                        ]
-                    }
-                },
-                {
-                    "object": "block",
-                    "type": "divider",
-                    "divider": {}
-                },
-                {
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [
-                            {
-                                "type": "text",
-                                "text": {
-                                    "content": "💬 Message content:"
-                                },
-                                "annotations": {
-                                    "bold": True
-                                }
-                            }
-                        ]
-                    }
-                },
-                {
-                    "object": "block",
-                    "type": "quote",
-                    "quote": {
+                    "type": "callout",
+                    "callout": {
                         "rich_text": [
                             {
                                 "type": "text",
@@ -972,13 +925,191 @@ class SimpleMessageListener:
                                     "content": content if len(content) <= 2000 else content[:1997] + "..."
                                 }
                             }
+                        ],
+                        "icon": {
+                            "emoji": "💬"
+                        },
+                        "color": "blue_background"
+                    }
+                }
+            ])
+            
+            # Add images if present (right after content)
+            if preview_images:
+                for img in preview_images:
+                    # Check if it's a direct upload or external URL
+                    if "file_upload" in img:
+                        # Direct Notion upload
+                        page_children.append({
+                            "object": "block",
+                            "type": "image",
+                            "image": {
+                                "type": "file_upload",
+                                "file_upload": {
+                                    "id": img["file_upload"]["id"]
+                                }
+                            }
+                        })
+                    elif "external" in img:
+                        # External URL
+                        page_children.append({
+                            "object": "block",
+                            "type": "image",
+                            "image": {
+                                "type": "external",
+                                "external": {
+                                    "url": img["external"]["url"]
+                                }
+                            }
+                        })
+            
+            # Add divider before metadata
+            page_children.append({
+                "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
+            
+            # NOW add metadata information in a more structured way
+            page_children.extend([
+                {
+                    "object": "block",
+                    "type": "heading_3",
+                    "heading_3": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {
+                                    "content": "📧 Message Details"
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "object": "block",
+                    "type": "table",
+                    "table": {
+                        "table_width": 2,
+                        "has_column_header": False,
+                        "has_row_header": False,
+                        "children": [
+                            {
+                                "object": "block",
+                                "type": "table_row",
+                                "table_row": {
+                                    "cells": [
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": "👤 Author"
+                                                },
+                                                "annotations": {
+                                                    "bold": True
+                                                }
+                                            }
+                                        ],
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": author_name
+                                                }
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            {
+                                "object": "block",
+                                "type": "table_row",
+                                "table_row": {
+                                    "cells": [
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": "🖥️ Server"
+                                                },
+                                                "annotations": {
+                                                    "bold": True
+                                                }
+                                            }
+                                        ],
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": server_name
+                                                }
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            {
+                                "object": "block",
+                                "type": "table_row",
+                                "table_row": {
+                                    "cells": [
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": "📺 Channel"
+                                                },
+                                                "annotations": {
+                                                    "bold": True
+                                                }
+                                            }
+                                        ],
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": f"#{channel_name}"
+                                                }
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            {
+                                "object": "block",
+                                "type": "table_row",
+                                "table_row": {
+                                    "cells": [
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": "📅 Date"
+                                                },
+                                                "annotations": {
+                                                    "bold": True
+                                                }
+                                            }
+                                        ],
+                                        [
+                                            {
+                                                "type": "text",
+                                                "text": {
+                                                    "content": message.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')
+                                                }
+                                            }
+                                        ]
+                                    ]
+                                }
+                            }
                         ]
                     }
                 }
-            ]
+            ])
             
-            # Add attachment information if present
-            if has_attachment:
+            # Add attachment information if present (and not just images)
+            non_image_attachments = [a for a in message.attachments if not any(a.filename.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff', '.tif'])]
+            if non_image_attachments:
                 page_children.extend([
                     {
                         "object": "block",
@@ -993,7 +1124,7 @@ class SimpleMessageListener:
                                 {
                                     "type": "text",
                                     "text": {
-                                        "content": f"📎 Attached files ({len(message.attachments)}):"
+                                        "content": f"📎 Attached files ({len(non_image_attachments)}):"
                                     },
                                     "annotations": {
                                         "bold": True
@@ -1004,10 +1135,8 @@ class SimpleMessageListener:
                     }
                 ])
                 
-                # Add each attachment as a bullet point
-                for attachment in message.attachments:
-                    is_image = any(attachment.filename.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff', '.tif'])
-                    file_icon = "🖼️" if is_image else "📄"
+                # Add each non-image attachment as a bullet point
+                for attachment in non_image_attachments:
                     page_children.append({
                         "object": "block",
                         "type": "bulleted_list_item",
@@ -1016,7 +1145,7 @@ class SimpleMessageListener:
                                 {
                                     "type": "text",
                                     "text": {
-                                        "content": f"{file_icon} {attachment.filename} ({attachment.size} bytes)"
+                                        "content": f"📄 {attachment.filename} ({attachment.size} bytes)"
                                     }
                                 }
                             ]
@@ -1039,7 +1168,7 @@ class SimpleMessageListener:
                                 {
                                     "type": "text",
                                     "text": {
-                                        "content": "� URL found in the message:"
+                                        "content": "🔗 URL found in the message:"
                                     },
                                     "annotations": {
                                         "bold": True
