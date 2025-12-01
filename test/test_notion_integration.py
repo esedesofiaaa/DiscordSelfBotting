@@ -26,6 +26,9 @@ def mock_message():
     message.id = "111111"
     message.guild.name = "Test Server"
     message.channel.name = "test-channel"
+    # Add category support
+    message.channel.category = MagicMock()
+    message.channel.category.name = "Test Category"
     message.author.name = "test-user"
     message.content = "Este es un mensaje de prueba."
     message.created_at.isoformat.return_value = "1900-07-12T12:00:00.000000"
@@ -42,6 +45,9 @@ def mock_reply_message(mock_message):
     reply.id = "222222"
     reply.guild.name = "Test Server"
     reply.channel.name = "test-channel"
+    # Add category support
+    reply.channel.category = MagicMock()
+    reply.channel.category.name = "Test Category"
     reply.author.name = "reply-user"
     reply.content = "Esta es una respuesta al mensaje anterior."
     reply.created_at.isoformat.return_value = "2025-07-12T12:01:00.000000"
@@ -81,7 +87,7 @@ def test_notion_database_structure(listener):
         # Propiedades que tu bot espera que existan
         expected_properties = [
             "Message ID", "Author", "Date", "Server", 
-            "Channel", "Content", "Message URL", "Original Message"
+            "Channel", "Category", "Content", "Message URL", "Original Message"
         ]
         
         for prop in expected_properties:

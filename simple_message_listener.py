@@ -784,6 +784,19 @@ class SimpleMessageListener:
             except:
                 channel_name = 'DM'
             
+            # Get channel category (if exists)
+            category_name = None
+            try:
+                if hasattr(message.channel, 'category') and message.channel.category:
+                    category_name = message.channel.category.name
+                    print(f"📂 Category detected: {category_name}")
+                else:
+                    category_name = "Sin categoría"
+                    print(f"📂 No category found, using default: {category_name}")
+            except Exception as e:
+                category_name = "Sin categoría"
+                print(f"⚠️ Error getting category: {e}, using default")
+            
             # Get author name
             author_name = f"@{message.author.name}"
             
@@ -1273,6 +1286,11 @@ class SimpleMessageListener:
                             "name": channel_name
                         }
                     },
+                    "Category": {
+                        "select": {
+                            "name": category_name
+                        }
+                    },
                     "Content": {
                         "rich_text": [
                             {
@@ -1434,6 +1452,16 @@ class SimpleMessageListener:
             except:
                 channel_name = 'DM'
             
+            # Get channel category (if exists)
+            category_name = None
+            try:
+                if hasattr(message.channel, 'category') and message.channel.category:
+                    category_name = message.channel.category.name
+                else:
+                    category_name = "Sin categoría"
+            except:
+                category_name = "Sin categoría"
+            
             # Get author name
             author_name = f"@{message.author.name}"
             
@@ -1499,6 +1527,7 @@ class SimpleMessageListener:
                 "date": message_date,
                 "server": server_name,
                 "channel": channel_name,
+                "category": category_name,
                 "content": content,
                 "attached_url": attached_url,
                 "message_url": message_url,
@@ -1536,9 +1565,10 @@ class SimpleMessageListener:
             # Execute file operations in a separate thread
             await asyncio.to_thread(_read_write_json_file)
             
-            # Show in console with image info
+            # Show in console with category and image info
+            category_info = f" 📂{category_name}" if category_name and category_name != "Sin categoría" else ""
             image_info = f" [🖼️{len(preview_images_info)} images]" if preview_images_info else ""
-            print(f"📝 [BACKUP JSON] [{server_name}] #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}{image_info}")
+            print(f"📝 [BACKUP JSON] [{server_name}]{category_info} #{channel_name} | {author_name}: {content[:50]}{'...' if len(content) > 50 else ''}{image_info}")
             
         except Exception as e:
             print(f"❌ Error logging message to JSON file: {e}")
