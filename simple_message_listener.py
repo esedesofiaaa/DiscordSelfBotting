@@ -136,14 +136,13 @@ class SimpleMessageListener:
         self.heartbeat_interval = int(heartbeat_val)
         self.heartbeat_system = None
         
-        # Google Drive configuration - ACTUALIZADO PARA SERVICE ACCOUNT
+        # Google Drive configuration - UPDATED FOR OAUTH2 & SERVICE ACCOUNT
         self.google_drive_enabled = os.getenv('GOOGLE_DRIVE_ENABLED', 'false').lower() == 'true'
         
-        # 🔥 CAMBIO: Soporte para Service Account
-        self.google_drive_service_account = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')  # NUEVO
-        self.google_drive_credentials = os.getenv('GOOGLE_DRIVE_CREDENTIALS', 'credentials.json')  # Legacy OAuth2
-        self.google_drive_token = os.getenv('GOOGLE_DRIVE_TOKEN', 'token.json')  # Legacy OAuth2
-        self.google_drive_folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID', None)  # Specific folder ID
+        self.google_drive_service_account = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+        self.google_drive_credentials = os.getenv('GOOGLE_DRIVE_CREDENTIALS_FILE', 'credentials.json')
+        self.google_drive_token = os.getenv('GOOGLE_DRIVE_TOKEN_FILE', 'token.pickle')
+        self.google_drive_folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID', None)
         self.google_drive_manager = None
         
         # Initialize heartbeat system
@@ -160,32 +159,16 @@ class SimpleMessageListener:
                 print(f"❌ Error initializing Notion: {e}")
                 self.notion_client = None
         
-        # Initialize Google Drive manager if enabled - ACTUALIZADO
+        # Initialize Google Drive manager if enabled
         if self.google_drive_enabled:
             try:
-                # 🔥 CAMBIO: Detectar si usar Service Account o OAuth2
-                if self.google_drive_service_account and os.path.exists(self.google_drive_service_account):
-                    # Usar Service Account (NUEVO MÉTODO)
-                    self.google_drive_manager = GoogleDriveManager(
-                        credentials_path=self.google_drive_service_account,  # service_account.json
-                        token_path=None,  # No se usa con Service Account
-                        target_folder_id=self.google_drive_folder_id
-                    )
-                    print("✅ Google Drive manager created (Service Account)")
-                elif os.path.exists(self.google_drive_credentials):
-                    # Usar OAuth2 (MÉTODO LEGACY)
-                    self.google_drive_manager = GoogleDriveManager(
-                        credentials_path=self.google_drive_credentials,  # credentials.json
-                        token_path=self.google_drive_token,  # token.json
-                        target_folder_id=self.google_drive_folder_id
-                    )
-                    print("✅ Google Drive manager created (OAuth2 - Legacy)")
-                    print("⚠️  Consider migrating to Service Account for better reliability")
-                else:
-                    print("❌ No valid Google Drive credentials found")
-                    print("   Service Account file: service_account.json (recommended)")
-                    print("   OAuth2 credentials: credentials.json (legacy)")
-                    self.google_drive_manager = None
+                self.google_drive_manager = GoogleDriveManager(
+                    credentials_path=self.google_drive_credentials,
+                    token_path=self.google_drive_token,
+                    target_folder_id=self.google_drive_folder_id,
+                    service_account_path=self.google_drive_service_account
+                )
+                print("✅ Google Drive manager created")
                     
             except Exception as e:
                 print(f"❌ Error creating Google Drive manager: {e}")
@@ -608,6 +591,10 @@ class SimpleMessageListener:
             image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.tiff', '.tif'}
             is_image = ext.lower() in image_extensions
             
+            # Check if it's a video file
+            video_extensions = {'.mp4', '.mov', '.webm', '.mkv', '.avi', '.flv', '.wmv', '.m4v'}
+            is_video = ext.lower() in video_extensions
+            
             # Download file from Discord using temporary file
             async with aiohttp.ClientSession() as session:
                 async with session.get(attachment.url) as response:
@@ -665,6 +652,7 @@ class SimpleMessageListener:
                             "height": getattr(attachment, 'height', None),
                             "google_drive_info": google_drive_info,
                             "is_image": is_image,
+                            "is_video": is_video,
                             "extension": ext.lower(),
                             "cleanup_needed": True  # Mark for cleanup after Notion upload
                         }
@@ -826,6 +814,7 @@ class SimpleMessageListener:
                         upload_method = file_info.get('upload_method', 'discord')
                         final_url = file_info.get('final_url', file_info['original_url'])
                         is_image = file_info.get('is_image', False)
+                        is_video = file_info.get('is_video', False)
                         
                         print(f"✅ Attachment processed ({upload_method}): {file_info['filename']}")
                         
@@ -880,7 +869,12 @@ class SimpleMessageListener:
                         
                         # Add upload method info to filename if it's Google Drive
                         if upload_method == "google_drive":
-                            file_entry["name"] = f"📁 {file_info['filename']}"  # Add Drive icon
+                            if is_video:
+                                file_entry["name"] = f"🎥 {file_info['filename']}"
+                            elif is_image:
+                                file_entry["name"] = f"🖼️ {file_info['filename']}"
+                            else:
+                                file_entry["name"] = f"📁 {file_info['filename']}"
                         
                         # Track temp file for cleanup
                         if file_info.get('cleanup_needed') and file_info.get('temp_path'):

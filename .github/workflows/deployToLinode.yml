@@ -3,24 +3,24 @@ name: Deploy Discord Message Listener to Linode
 on:
   push:
     branches:
-      - main  # Solo deploy desde main
+      - main # Solo deploy desde main
     paths-ignore:
-      - 'README_SIMPLE_LISTENER.md'
-      - 'docs/**'
-      - '*.md'
-      - '.github/workflows/**'
-      - '.gitignore'
-      - '.vscode/**'
-      - 'test/**'
-  workflow_dispatch:  # Permite deployment manual
+      - "README_SIMPLE_LISTENER.md"
+      - "docs/**"
+      - "*.md"
+      - ".github/workflows/**"
+      - ".gitignore"
+      - ".vscode/**"
+      - "test/**"
+  workflow_dispatch: # Permite deployment manual
     inputs:
       environment:
-        description: 'Environment to deploy to'
+        description: "Environment to deploy to"
         required: true
-        default: 'production'
+        default: "production"
         type: choice
         options:
-        - production
+          - production
 
 jobs:
   deploy:
@@ -28,123 +28,120 @@ jobs:
     environment: production
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: Configure SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
-        chmod 644 ~/.ssh/known_hosts
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
-    - name: Deploy to Linode and Restart Message Listener
-      run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} << 'EOF'
-          set -e # Exit on any error within this SSH block
+      - name: Deploy to Linode and Restart Message Listener
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.LINODE_USERNAME }}@${{ secrets.LINODE_HOST }} << 'EOF'
+            set -e # Exit on any error within this SSH block
 
-          echo "🚀 Starting deployment..."
+            echo "🚀 Starting deployment..."
 
-          # Navigate to project directory (use existing directory)
-          cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
+            # Navigate to project directory (use existing directory)
+            cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
 
-          # Stop the message listener service before updating
-          echo "⏹️ Stopping Discord bot service..."
-          /usr/bin/sudo -n /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
+            # Stop the message listener service before updating
+            echo "⏹️ Stopping Discord bot service..."
+            /usr/bin/sudo -n /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
 
-          # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
-          echo "🔧 Fixing file ownership (as safeguard)..."
-          /usr/bin/sudo -n /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)."
+            # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
+            echo "🔧 Fixing file ownership (as safeguard)..."
+            /usr/bin/sudo -n /usr/bin/chown -R deployuser:deployuser /opt/discord-bot || echo "⚠️ Could not set ownership (might not be necessary)."
 
-          # Handle git repository setup
-          echo "📥 Setting up repository..."
-          if [ ! -d ".git" ]; then
-            echo "🔄 No git repository found, cloning..."
-            # Remove any existing files first (ensure it's safe)
-            rm -rf /opt/discord-bot/* /opt/discord-bot/.[^.]* 2>/dev/null || true
-            git clone https://github.com/${{ github.repository }}.git . || { echo "❌ Failed to clone repository"; exit 1; }
-            git config --global --add safe.directory /opt/discord-bot
-          else
-            echo "📦 Updating existing repository..."
-            # Ensure correct ownership before git operations (again, a safeguard)
-            git config --global --add safe.directory /opt/discord-bot
-            git clean -fdx  # Remove untracked files and directories
-            git fetch origin main || { echo "❌ Failed to fetch latest changes"; exit 1; }
-            git reset --hard origin/main || { echo "❌ Failed to reset to latest changes"; exit 1; }
-          fi
+            # Handle git repository setup
+            echo "📥 Setting up repository..."
+            if [ ! -d ".git" ]; then
+              echo "🔄 No git repository found, cloning..."
+              # Remove any existing files first (ensure it's safe)
+              rm -rf /opt/discord-bot/* /opt/discord-bot/.[^.]* 2>/dev/null || true
+              git clone https://github.com/${{ github.repository }}.git . || { echo "❌ Failed to clone repository"; exit 1; }
+              git config --global --add safe.directory /opt/discord-bot
+            else
+              echo "📦 Updating existing repository..."
+              # Ensure correct ownership before git operations (again, a safeguard)
+              git config --global --add safe.directory /opt/discord-bot
+              git clean -fdx -e token.pickle -e credentials.json # Remove untracked files but KEEP OAuth credentials
+              git fetch origin main || { echo "❌ Failed to fetch latest changes"; exit 1; }
+              git reset --hard origin/main || { echo "❌ Failed to reset to latest changes"; exit 1; }
+            fi
 
-          # Activate virtual environment
-          echo "🐍 Activating virtual environment..."
-          # Asegúrate de que el venv exista (prepare-server.sh lo crea)
-          if [ ! -d "venv" ]; then
-            echo "Creating virtual environment..."
-            python3 -m venv venv || { echo "❌ Failed to create virtual environment"; exit 1; }
-          fi
-          source venv/bin/activate || { echo "❌ Failed to activate virtual environment"; exit 1; }
+            # Activate virtual environment
+            echo "🐍 Activating virtual environment..."
+            # Asegúrate de que el venv exista (prepare-server.sh lo crea)
+            if [ ! -d "venv" ]; then
+              echo "Creating virtual environment..."
+              python3 -m venv venv || { echo "❌ Failed to create virtual environment"; exit 1; }
+            fi
+            source venv/bin/activate || { echo "❌ Failed to activate virtual environment"; exit 1; }
 
-          # Update dependencies
-          echo "📦 Installing/updating dependencies..."
-          pip install --upgrade pip || { echo "❌ Failed to upgrade pip"; exit 1; }
-          pip install -r requirements.txt || { echo "❌ Failed to install dependencies"; exit 1; }
-          deactivate # No es necesario mantener el venv activo después de pip install
+            # Update dependencies
+            echo "📦 Installing/updating dependencies..."
+            pip install --upgrade pip || { echo "❌ Failed to upgrade pip"; exit 1; }
+            pip install -r requirements.txt || { echo "❌ Failed to install dependencies"; exit 1; }
+            deactivate # No es necesario mantener el venv activo después de pip install
 
-          # Create .env file with secrets
-          echo "🔑 Creating .env file with secrets..."
-          echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
-          echo "MONITORING_SERVER_ID=${{ vars.MONITORING_SERVER_ID }}" >> .env
-          echo "MONITORING_CHANNEL_IDS=${{ vars.MONITORING_CHANNEL_IDS }}" >> .env
-          echo "LOG_FILE=./logs/messages.json" >> .env
-          echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .env
-          echo "NOTION_DATABASE_ID=${{ vars.NOTION_DATABASE_ID }}" >> .env
-          echo "HEALTHCHECKS_PING_URL=${{ secrets.HEALTHCHECKS_PING_URL }}" >> .env
-          echo "HEARTBEAT_INTERVAL=${{ vars.HEARTBEAT_INTERVAL }}" >> .env
-          echo "MONITOR_INTERVAL=${{ vars.MONITOR_INTERVAL }}" >> .env
-          echo "BOT_PROCESS_NAME=${{ vars.BOT_PROCESS_NAME }}" >> .env
-          echo "AUTO_RESTART_BOT=${{ vars.AUTO_RESTART_BOT }}" >> .env
-          echo "GOOGLE_DRIVE_ENABLED=${{ vars.GOOGLE_DRIVE_ENABLED }}" >> .env
-          echo "GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json" >> .env
-          echo "GOOGLE_DRIVE_FOLDER_ID=${{ vars.GOOGLE_DRIVE_FOLDER_ID }}" >> .env
-          
-          # Create Service Account credentials file if Google Drive is enabled
-          if [ "${{ vars.GOOGLE_DRIVE_ENABLED }}" = "true" ]; then
-            echo "🔑 Creating Google Drive Service Account file..."
-            echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_FILE }}' > service_account.json
-            chmod 600 service_account.json
-            echo "✅ Service Account file created successfully"
+            # Create .env file with secrets
+            echo "🔑 Creating .env file with secrets..."
+            echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" > .env
+            echo "MONITORING_SERVER_ID=${{ vars.MONITORING_SERVER_ID }}" >> .env
+            echo "MONITORING_CHANNEL_IDS=${{ vars.MONITORING_CHANNEL_IDS }}" >> .env
+            echo "LOG_FILE=./logs/messages.json" >> .env
+            echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .env
+            echo "NOTION_DATABASE_ID=${{ vars.NOTION_DATABASE_ID }}" >> .env
+            echo "HEALTHCHECKS_PING_URL=${{ secrets.HEALTHCHECKS_PING_URL }}" >> .env
+            echo "HEARTBEAT_INTERVAL=${{ vars.HEARTBEAT_INTERVAL }}" >> .env
+            echo "MONITOR_INTERVAL=${{ vars.MONITOR_INTERVAL }}" >> .env
+            echo "BOT_PROCESS_NAME=${{ vars.BOT_PROCESS_NAME }}" >> .env
+            echo "AUTO_RESTART_BOT=${{ vars.AUTO_RESTART_BOT }}" >> .env
+            echo "GOOGLE_DRIVE_ENABLED=${{ vars.GOOGLE_DRIVE_ENABLED }}" >> .env
+            echo "GOOGLE_DRIVE_FOLDER_ID=${{ vars.GOOGLE_DRIVE_FOLDER_ID }}" >> .env
             
-            # Optional: Verify JSON format
-            python3 -c "import json; json.load(open('service_account.json')); print('✅ Service Account JSON is valid')" || {
-              echo "❌ Invalid Service Account JSON format"
-              exit 1
-            }
-          fi
-          
-          # Asegúrate de que .env no tiene permisos de lectura para todos
-          chmod 600 .env
+            # Add OAuth 2.0 configuration (Files must be uploaded manually to server)
+            echo "GOOGLE_DRIVE_CREDENTIALS_FILE=credentials.json" >> .env
+            echo "GOOGLE_DRIVE_TOKEN_FILE=token.pickle" >> .env
+            echo "GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json" >> .env
+            
+            # Create Service Account credentials file if Google Drive is enabled (Fallback)
+            if [ "${{ vars.GOOGLE_DRIVE_ENABLED }}" = "true" ] && [ -n "${{ secrets.GOOGLE_SERVICE_ACCOUNT_FILE }}" ]; then
+              echo "🔑 Creating Google Drive Service Account file (Fallback)..."
+              echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_FILE }}' > service_account.json
+              chmod 600 service_account.json
+            fi
+            
+            # Asegúrate de que .env no tiene permisos de lectura para todos
+            chmod 600 .env
 
-          # Update service configuration
-          echo "🔧 Updating service configuration..."
-          /usr/bin/sudo -n cp discord-bot.service /etc/systemd/system/
-          /usr/bin/sudo -n systemctl daemon-reload
+            # Update service configuration
+            echo "🔧 Updating service configuration..."
+            /usr/bin/sudo -n cp discord-bot.service /etc/systemd/system/
+            /usr/bin/sudo -n systemctl daemon-reload
 
-          # Start the message listener service
-          echo "▶️ Starting Discord bot service..."
-          /usr/bin/sudo -n /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
+            # Start the message listener service
+            echo "▶️ Starting Discord bot service..."
+            /usr/bin/sudo -n /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
 
-          # Check service status
-          echo "🔍 Checking service status..."
-          /usr/bin/sudo -n /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
+            # Check service status
+            echo "🔍 Checking service status..."
+            /usr/bin/sudo -n /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
 
-          echo "🎉 Deployment completed successfully!"
-        EOF
+            echo "🎉 Deployment completed successfully!"
+          EOF
