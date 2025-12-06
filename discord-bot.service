@@ -18,7 +18,7 @@ Type=simple
 User=deployuser
 Group=deployuser
 WorkingDirectory=/opt/discord-bot
-Environment=PATH=/opt/discord-bot/venv/bin
+Environment=PATH=/opt/discord-bot/venv/bin PYTHONUNBUFFERED=1
 ExecStart=/opt/discord-bot/venv/bin/python simple_message_listener.py
 Restart=always
 RestartSec=10
