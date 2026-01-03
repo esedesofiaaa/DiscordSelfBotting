@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from notion_client import Client
 from heartbeat_system import HeartbeatSystem
 from google_drive_manager import GoogleDriveManager
+from activity_tracker import ActivityTracker
 
 # Import the quickUpload function for official Notion file uploads
 def quickUpload(filePath: str, pageId: str, notionToken: str) -> Optional[dict]:
@@ -149,6 +150,11 @@ class SimpleMessageListener:
         if self.heartbeat_url:
             self.heartbeat_system = HeartbeatSystem(self.heartbeat_url, self.heartbeat_interval)
             print(f"✅ Heartbeat system configured (interval: {self.heartbeat_interval}s)")
+
+        # Initialize activity tracker
+        activity_file = os.getenv('ACTIVITY_TRACKER_FILE', './logs/bot_activity.json')
+        self.activity_tracker = ActivityTracker(activity_file)
+        print(f"✅ Activity tracker initialized")
         
         # Initialize Notion client if configured
         if self.notion_token and self.notion_database_id:
@@ -218,6 +224,11 @@ class SimpleMessageListener:
             if self.heartbeat_system:
                 print("💓 Starting heartbeat system...")
                 asyncio.create_task(self.heartbeat_system.start_heartbeat())
+
+            # Record bot start in activity tracker
+            if self.activity_tracker:
+                self.activity_tracker.record_bot_start()
+                print("📊 Activity tracking started")
             
             # Initialize Google Drive if enabled
             if self.google_drive_manager:
@@ -315,7 +326,11 @@ class SimpleMessageListener:
                             raise msg_error
                 
                 self.processed_messages += 1
-                
+
+                # Record activity in tracker
+                if self.activity_tracker:
+                    await self.activity_tracker.record_activity()
+
                 # Show progress every 10 messages (less frequent for real-time)
                 if self.processed_messages % 10 == 0:
                     print(f"📊 Progress: {self.processed_messages} messages processed...")

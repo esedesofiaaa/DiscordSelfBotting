@@ -1,0 +1,15 @@
+[Unit]
+Description=Discord Bot Inactivity Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=deployuser
+WorkingDirectory=/opt/discord-bot
+Environment="PATH=/opt/discord-bot/venv/bin"
+ExecStart=/opt/discord-bot/venv/bin/python inactivity_monitor.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

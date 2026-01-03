@@ -60,8 +60,9 @@ jobs:
             cd /opt/discord-bot || { echo "❌ Failed to navigate to project directory"; exit 1; }
 
             # Stop the message listener service before updating
-            echo "⏹️ Stopping Discord bot service..."
-            /usr/bin/sudo -n /usr/bin/systemctl stop discord-bot || echo "⚠️ Service was not running or failed to stop, continuing."
+            echo "⏹️ Stopping Discord bot services..."
+            /usr/bin/sudo -n /usr/bin/systemctl stop discord-bot || echo "⚠️ Service discord-bot was not running or failed to stop, continuing."
+            /usr/bin/sudo -n /usr/bin/systemctl stop discord-inactivity-monitor || echo "⚠️ Service discord-inactivity-monitor was not running or failed to stop, continuing."
 
             # Fix ownership issues (should be handled by prepare-server.sh, but good as a safeguard)
             echo "🔧 Fixing file ownership (as safeguard)..."
@@ -115,6 +116,15 @@ jobs:
             echo "GOOGLE_DRIVE_ENABLED=${{ vars.GOOGLE_DRIVE_ENABLED }}" >> .env
             echo "GOOGLE_DRIVE_FOLDER_ID=${{ vars.GOOGLE_DRIVE_FOLDER_ID }}" >> .env
             
+            # Email Notification Configuration
+            echo "SMTP_SERVER=${{ vars.SMTP_SERVER }}" >> .env
+            echo "SMTP_PORT=${{ vars.SMTP_PORT }}" >> .env
+            echo "SMTP_SENDER_EMAIL=${{ secrets.SMTP_SENDER_EMAIL }}" >> .env
+            echo "SMTP_SENDER_PASSWORD=${{ secrets.SMTP_SENDER_PASSWORD }}" >> .env
+            echo "ALERT_RECIPIENT_EMAILS=${{ secrets.ALERT_RECIPIENT_EMAILS }}" >> .env
+            echo "INACTIVITY_THRESHOLD_HOURS=${{ vars.INACTIVITY_THRESHOLD_HOURS }}" >> .env
+            echo "INACTIVITY_CHECK_INTERVAL_MINUTES=${{ vars.INACTIVITY_CHECK_INTERVAL_MINUTES }}" >> .env
+
             # Add OAuth 2.0 configuration (Files must be uploaded manually to server)
             echo "GOOGLE_DRIVE_CREDENTIALS_FILE=credentials.json" >> .env
             echo "GOOGLE_DRIVE_TOKEN_FILE=token.pickle" >> .env
@@ -133,15 +143,22 @@ jobs:
             # Update service configuration
             echo "🔧 Updating service configuration..."
             /usr/bin/sudo -n cp discord-bot.service /etc/systemd/system/
+            /usr/bin/sudo -n cp discord-inactivity-monitor.service /etc/systemd/system/
             /usr/bin/sudo -n systemctl daemon-reload
 
             # Start the message listener service
             echo "▶️ Starting Discord bot service..."
             /usr/bin/sudo -n /usr/bin/systemctl start discord-bot || { echo "❌ Failed to start Discord bot service"; exit 1; }
+            
+            # Start the inactivity monitor service
+            echo "▶️ Starting Inactivity Monitor service..."
+            /usr/bin/sudo -n /usr/bin/systemctl enable discord-inactivity-monitor
+            /usr/bin/sudo -n /usr/bin/systemctl restart discord-inactivity-monitor || { echo "❌ Failed to start Inactivity Monitor service"; exit 1; }
 
             # Check service status
             echo "🔍 Checking service status..."
             /usr/bin/sudo -n /usr/bin/systemctl is-active discord-bot --quiet && echo "✅ Discord bot is running" || { echo "❌ Failed to start Discord bot"; exit 1; }
+            /usr/bin/sudo -n /usr/bin/systemctl is-active discord-inactivity-monitor --quiet && echo "✅ Inactivity Monitor is running" || { echo "❌ Failed to start Inactivity Monitor"; exit 1; }
 
             echo "🎉 Deployment completed successfully!"
           EOF
